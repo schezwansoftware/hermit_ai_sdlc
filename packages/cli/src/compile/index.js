@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DEFAULT_PIPELINE, ensureDir, readJson, writeJson } from '@hermit/core';
-import { compileAgent, compileAgentsMd, compileCopilotInstructions, compileInstructions } from './copilot.js';
+import { compileAgent, compileAgentsMd, compileCopilotInstructions, compileInstructions, compileProjectInstructions } from './copilot.js';
 import { compileCliMcp, compileIntellijSetup, compileVsCodeMcp } from './mcp.js';
 
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -11,12 +11,13 @@ const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
  * Produce every host-facing file from the canonical definitions.
  * Nothing here reads a previously generated file, so compilation is idempotent.
  */
-export function compileAll({ registry, config = {}, pipeline = DEFAULT_PIPELINE }) {
+export function compileAll({ registry, config = {}, pipeline = DEFAULT_PIPELINE, layoutInfo = { monorepo: false, projects: [] } }) {
   const files = [];
   for (const agent of registry.agents) files.push(compileAgent(agent, { registry, pipeline }));
   files.push(compileCopilotInstructions({ registry, pipeline }));
   files.push(compileAgentsMd({ registry, pipeline }));
   files.push(...compileInstructions());
+  files.push(...compileProjectInstructions(layoutInfo));
   files.push(compileVsCodeMcp(config));
   files.push(compileCliMcp(config));
   files.push(compileIntellijSetup(config));

@@ -25,7 +25,8 @@ export const DEFAULT_PIPELINE = {
       exitCriteria: [
         { id: 'context-written', type: 'artifact_exists', artifact: 'project-context' },
         { id: 'map-written', type: 'artifact_exists', artifact: 'codebase-map' },
-        { id: 'stack-identified', type: 'contains', artifact: 'project-context', value: '## Tech Stack' }
+        { id: 'stack-identified', type: 'contains', artifact: 'project-context', value: '## Tech Stack' },
+        { id: 'projects-mapped', type: 'contains', artifact: 'codebase-map', value: '## Projects', when: { monorepo: true } }
       ]
     },
     {
@@ -95,7 +96,8 @@ export const DEFAULT_PIPELINE = {
         { id: 'arch-written', type: 'artifact_exists', artifact: 'architecture-spec' },
         { id: 'adr-written', type: 'artifact_exists', artifact: 'adr' },
         { id: 'components-mapped', type: 'contains', artifact: 'architecture-spec', value: '## Component Map' },
-        { id: 'risks-listed', type: 'contains', artifact: 'impact-analysis', value: '## Risks' }
+        { id: 'risks-listed', type: 'contains', artifact: 'impact-analysis', value: '## Risks' },
+        { id: 'cross-project-impact', type: 'contains', artifact: 'impact-analysis', value: '## Cross-Project Impact', when: { monorepo: true } }
       ]
     },
     {
@@ -107,7 +109,8 @@ export const DEFAULT_PIPELINE = {
       outputs: ['work-plan'],
       exitCriteria: [
         { id: 'plan-written', type: 'artifact_exists', artifact: 'work-plan' },
-        { id: 'tasks-enumerated', type: 'min_list_items', artifact: 'work-plan', section: '## Work Packages', min: 1 }
+        { id: 'tasks-enumerated', type: 'min_list_items', artifact: 'work-plan', section: '## Work Packages', min: 1 },
+        { id: 'packages-attributed', type: 'contains', artifact: 'work-plan', value: '## Project Sequencing', when: { monorepo: true } }
       ]
     },
     {
@@ -119,7 +122,8 @@ export const DEFAULT_PIPELINE = {
       outputs: ['change-set'],
       exitCriteria: [
         { id: 'changeset-written', type: 'artifact_exists', artifact: 'change-set' },
-        { id: 'files-listed', type: 'contains', artifact: 'change-set', value: '## Files Changed' }
+        { id: 'files-listed', type: 'contains', artifact: 'change-set', value: '## Files Changed' },
+        { id: 'projects-touched', type: 'contains', artifact: 'change-set', value: '## Projects Touched', when: { monorepo: true } }
       ]
     },
     {

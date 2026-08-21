@@ -147,7 +147,7 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
   const stage = getStage(pipeline, run.currentStage);
   if (!stage) return { state: 'complete', message: `Run ${run.id} is already complete.` };
 
-  const check = evaluateAll(paths, run.id, stage.exitCriteria);
+  const check = evaluateAll(paths, run.id, stage.exitCriteria, { monorepo: Boolean(run.monorepo) });
   if (!check.ok) {
     journal(paths, run.id, { event: 'handoff.rejected', stage: stage.id, agent: agentId, failed: check.failed });
     return {

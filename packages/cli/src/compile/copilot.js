@@ -227,3 +227,72 @@ These are the canonical definitions. Everything in \`.github/agents/\` is compil
     }
   ];
 }
+
+/**
+ * One path-scoped instruction file per project.
+ *
+ * VS Code loads these automatically when a file matching `applyTo` is in play,
+ * which is the cleanest way to give a monorepo per-project context without
+ * inflating the always-on instructions that every surface pays for.
+ */
+export function compileProjectInstructions(layoutInfo) {
+  const { projects, monorepo, tool } = layoutInfo;
+  if (!monorepo || !projects.length) return [];
+
+  const files = projects.map((project) => ({
+    path: `.github/instructions/project-${project.id}.instructions.md`,
+    content: `---
+applyTo: '${project.path}/**'
+description: '${project.id} — ${project.kind}${(project.stack ?? []).length ? ` (${project.stack.join(', ')})` : ''}'
+---
+
+# Project: \`${project.id}\`
+
+You are working inside \`${project.path}/\`, one of ${projects.length} projects in this repository.
+
+- **Kind**: ${project.kind}${project.ui ? ' — this project has a user interface, so UX stages apply to work that touches it' : ''}
+- **Stack**: ${(project.stack ?? ['unknown']).join(', ')}
+
+## Boundaries
+
+Changes here must stay here unless a human decided otherwise. If a change appears to require editing another project, that is a **cross-project change**: surface it, name the other project, and let the architecture stage decide. Do not quietly widen the blast radius mid-implementation.
+
+Before adding a dependency, check whether a shared package in this repository already provides it. Duplicating a utility across projects is how a monorepo stops being worth having.
+
+## Hermit
+
+Run scope is set when the run starts. \`hermit_next_task\` tells you which projects are in scope and which are not; anything listed as out of scope is readable for context but not writable.
+
+${monorepo && tool ? `This repository is managed with **${tool}**. Respect its conventions for dependency resolution and build ordering.
+` : ''}`
+  }));
+
+  // An index so an agent can see the whole layout without walking the tree.
+  files.push({
+    path: '.github/instructions/monorepo.instructions.md',
+    content: `---
+applyTo: '**'
+description: 'Repository layout — ${projects.length} projects${tool ? ` (${tool})` : ''}'
+---
+
+# Repository layout
+
+${projects.length} projects${tool ? `, managed with **${tool}**` : ''}:
+
+| Project | Path | Kind | UI | Stack |
+|---|---|---|---|---|
+${projects.map((p) => `| \`${p.id}\` | \`${p.path}/\` | ${p.kind} | ${p.ui ? 'yes' : '—'} | ${(p.stack ?? []).join(', ')} |`).join('\n')}
+
+## Rules that apply everywhere
+
+- **Locate before you edit.** A file path alone does not tell you which project owns a behaviour. Confirm the project, then read its own instruction file.
+- **Cross-project changes need a decision.** A change spanning projects has a wider blast radius than the one it was scoped for. Name it and escalate rather than absorbing it.
+- **Shared code lives in shared packages.** Do not copy a utility between projects.
+- **Each project owns its tests.** Run the suite for the project you changed, not just the root command.
+
+Runs can target a subset: \`hermit start "<intent>" --project ${projects.slice(0, 2).map((p) => p.id).join(',')}\`. When no project in scope has a UI, the three UX stages are skipped automatically.
+`
+  });
+
+  return files;
+}

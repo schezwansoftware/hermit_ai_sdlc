@@ -69,8 +69,16 @@ export function extractSection(markdown, heading) {
 /**
  * @returns {{ ok:boolean, results:Array<{id:string,ok:boolean,detail:string}>, failed:string[] }}
  */
-export function evaluateAll(paths, runId, criteria = []) {
-  const results = criteria.map((c) => evaluateCriterion(paths, runId, c));
+/** Is this criterion active for the run in hand? */
+export function criterionApplies(criterion, context = {}) {
+  const when = criterion.when;
+  if (!when) return true;
+  return Object.entries(when).every(([key, expected]) => context[key] === expected);
+}
+
+export function evaluateAll(paths, runId, criteria = [], context = {}) {
+  const active = criteria.filter((c) => criterionApplies(c, context));
+  const results = active.map((c) => evaluateCriterion(paths, runId, c));
   const failed = results.filter((r) => !r.ok);
   return { ok: failed.length === 0, results, failed: failed.map((f) => f.id) };
 }

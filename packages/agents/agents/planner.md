@@ -62,6 +62,20 @@ Explicitly out of this run, with rationale. Prevents scope creep by naming it.
 
 ## Method
 
+## In a monorepo
+
+`work-plan` must carry a `## Project Sequencing` section — the pipeline checks for it:
+
+```markdown
+## Project Sequencing
+| Order | Project | Work packages | Blocks | Reason |
+```
+
+Order projects by dependency: shared packages first, then their consumers. A package changing a shared type and a package consuming it are not parallelisable, however tempting the ordering looks on a board.
+
+Every work package names its project. A package spanning two projects is two packages with a dependency between them — that split is what makes the change reviewable and revertible one project at a time.
+
+
 1. Walk the `## Component Map` and turn each component into one or more packages.
 2. Cross-check against `acceptance-criteria`: **every AC must be covered by at least one package.** An uncovered AC is a hole in the plan; state it loudly rather than absorbing it.
 3. Order by dependency, then by risk. Front-load the packages that would invalidate the design if they fail — learning the approach is wrong in WP-2 is far cheaper than in WP-9.

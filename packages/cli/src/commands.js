@@ -7,6 +7,7 @@ import {
   layout, loadRegistry, ensureDir, readJson, writeJson,
   DEFAULT_PIPELINE, SERVERS, SCM_PROVIDERS, groupToolsByServer,
   createRun, loadRun, listRuns, requireActiveRun, setActiveRun, saveRun, readJournal,
+  resolveProjects, detectProjects, hasUiProject,
   nextTask, runStatus, decideGate, getGate, openGates, readArtifact, listArtifacts
 } from '@hermit/core';
 import { compileAll, installPacks, writeFiles } from './compile/index.js';
@@ -55,9 +56,21 @@ export function cmdInit(opts) {
   if (!fs.existsSync(p.config)) writeJson(p.config, DEFAULT_CONFIG);
   const config = readJson(p.config, DEFAULT_CONFIG);
 
+  // Record the repository layout once, so later runs are not re-detecting it and
+  // so a team can correct a misclassification by editing config rather than code.
+  if (!Array.isArray(config.projects) || !config.projects.length) {
+    const detected = detectProjects(p.root);
+    if (detected.projects.length > 1) {
+      config.projects = detected.projects;
+      config.monorepoTool = detected.tool;
+      writeJson(p.config, config);
+    }
+  }
+  const layoutInfo = resolveProjects(p.root, config);
+
   const packs = installPacks(PACK_ROOT, p.hermit, { force: opts.force });
   const registry = loadRegistry(p);
-  const files = compileAll({ registry, config });
+  const files = compileAll({ registry, config, layoutInfo });
   const result = writeFiles(p.root, files, { force: opts.force, manifestFile: p.manifestFile });
 
   ensureDir(p.runsDir);
@@ -70,6 +83,10 @@ export function cmdInit(opts) {
   log(c.bold(isNew ? 'Hermit installed' : 'Hermit updated'), c.dim(`in ${p.root}`));
   log('');
   log(`  ${c.green('✓')} ${registry.agents.length} agents, ${registry.skills.length} skills, ${registry.knowledge.length} knowledge packs`);
+  if (layoutInfo.monorepo) {
+    const kinds = layoutInfo.projects.reduce((acc, x) => ({ ...acc, [x.kind]: (acc[x.kind] ?? 0) + 1 }), {});
+    log(`  ${c.green('✓')} monorepo detected${layoutInfo.tool ? ` (${layoutInfo.tool})` : ''}: ${layoutInfo.projects.length} projects — ${Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(', ')}`);
+  }
   if (packs.copied.length) log(`  ${c.green('✓')} ${packs.copied.length} pack(s) installed into .hermit/`);
   if (packs.preserved.length) log(`  ${c.dim('·')} ${packs.preserved.length} existing pack(s) left untouched`);
   log(`  ${c.green('✓')} ${result.written.length} generated file(s) written`);
@@ -103,11 +120,31 @@ export function cmdStart(intent, opts) {
   const flags = [];
   if (opts.noUi) flags.push('no-ui');
 
+  const config = readJson(p.config, {});
+  const { projects, monorepo } = resolveProjects(p.root, config);
+
+  let selectedProjects = [];
+  if (opts.project) {
+    const wanted = String(opts.project).split(',').map((x) => x.trim()).filter(Boolean);
+    const known = new Set(projects.map((x) => x.id));
+    const unknown = wanted.filter((x) => !known.has(x));
+    if (unknown.length) {
+      throw new Error(
+        `Unknown project(s): ${unknown.join(', ')}\n  Known: ${projects.map((x) => x.id).join(', ') || 'none detected'}\n  List them with: hermit projects`
+      );
+    }
+    selectedProjects = wanted;
+  } else if (monorepo) {
+    selectedProjects = projects.map((x) => x.id);
+  }
+
   const run = createRun(p, {
     title: opts.title ?? intent.slice(0, 80),
     intent,
     jiraKey: opts.jira ?? null,
-    flags
+    flags,
+    projects,
+    selectedProjects
   });
   const status = runStatus({ paths: p, run });
   const stage = DEFAULT_PIPELINE.stages.find((s) => s.id === status.currentStage);
@@ -116,7 +153,13 @@ export function cmdStart(intent, opts) {
   log(c.bold('Run started'), c.dim(run.id));
   log(`  Intent:  ${intent}`);
   if (opts.jira) log(`  Tracker: ${opts.jira}`);
-  if (flags.length) log(`  Flags:   ${flags.join(', ')} ${c.dim('(UX stages will be skipped)')}`);
+  if (flags.length) log(`  Flags:   ${flags.join(', ')}`);
+  if (monorepo) {
+    log(`  Scope:   ${run.selectedProjects.join(', ')} ${c.dim(`(${projects.length} projects in repo)`)}`);
+    if (!hasUiProject(projects, run.selectedProjects)) {
+      log(`           ${c.dim('no UI project in scope — the three UX stages are skipped')}`);
+    }
+  }
   log('');
   log(`  First stage: ${c.cyan(stage.id)} — ${stage.title}, owned by ${c.bold(stage.agent)}`);
   log('');
@@ -297,6 +340,33 @@ export function cmdJournal(opts) {
   }
 }
 
+// ---------------------------------------------------------------- projects
+
+export function cmdProjects(opts) {
+  const p = paths(opts);
+  const config = readJson(p.config, {});
+  const { projects, monorepo, tool, source } = resolveProjects(p.root, config);
+
+  if (!projects.length) {
+    log('\n  Single-project repository — no sub-projects detected.');
+    log(c.dim('  Declare them explicitly in .hermit/config.json under "projects" if detection missed something.\n'));
+    return [];
+  }
+
+  log('');
+  log(c.bold(monorepo ? 'Monorepo' : 'Single project'), c.dim(`${projects.length} project(s) · ${source}${tool ? ` · ${tool}` : ''}`));
+  log('');
+  log(c.dim('  ID                        PATH                      KIND       UI   STACK'));
+  for (const x of projects) {
+    log(`  ${x.id.padEnd(25)} ${(x.path + '/').padEnd(25)} ${x.kind.padEnd(10)} ${(x.ui ? c.cyan('yes') : c.dim(' — ')).padEnd(13)} ${c.dim((x.stack ?? []).join(', '))}`);
+  }
+  log('');
+  log(c.dim(`  Target a subset:  hermit start "<intent>" --project ${projects.slice(0, 2).map((x) => x.id).join(',')}`));
+  log(c.dim('  Correct a misclassification by editing "projects" in .hermit/config.json.'));
+  log('');
+  return projects;
+}
+
 // ---------------------------------------------------------------- doctor
 
 export function cmdDoctor(opts) {
@@ -316,6 +386,10 @@ export function cmdDoctor(opts) {
   const config = readJson(p.config, {});
   const registry = loadRegistry(p);
   log(`  ${c.green('✓')} ${registry.agents.length} agents, ${registry.skills.length} skills, ${registry.knowledge.length} knowledge packs`);
+  if (layoutInfo.monorepo) {
+    const kinds = layoutInfo.projects.reduce((acc, x) => ({ ...acc, [x.kind]: (acc[x.kind] ?? 0) + 1 }), {});
+    log(`  ${c.green('✓')} monorepo detected${layoutInfo.tool ? ` (${layoutInfo.tool})` : ''}: ${layoutInfo.projects.length} projects — ${Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(', ')}`);
+  }
 
   // Pipeline integrity: every stage has an agent, every input is produced upstream.
   const produced = new Set();
@@ -342,6 +416,20 @@ export function cmdDoctor(opts) {
   for (const agent of registry.agents) {
     const { unknown } = groupToolsByServer(agent.context?.reads?.mcp ?? []);
     if (unknown.length) warnings.push(`agent "${agent.id}" declares unknown MCP tool(s): ${unknown.join(', ')}`);
+  }
+
+  // Monorepo layout.
+  const { projects: declaredProjects, monorepo, tool: mrTool } = resolveProjects(p.root, config);
+  if (declaredProjects.length) {
+    const missingPaths = declaredProjects.filter((x) => !fs.existsSync(path.join(p.root, x.path)));
+    for (const m of missingPaths) problems.push(`project "${m.id}" declares path "${m.path}" which does not exist`);
+    const unclassified = declaredProjects.filter((x) => x.kind === 'unknown');
+    for (const u of unclassified) {
+      warnings.push(`project "${u.id}" could not be classified — set "kind" in .hermit/config.json so scoping and UX skipping work`);
+    }
+    if (!missingPaths.length) {
+      log(`  ${c.green('✓')} ${monorepo ? 'monorepo' : 'single project'}: ${declaredProjects.length} project(s)${mrTool ? ` via ${mrTool}` : ''}`);
+    }
   }
 
   // Credentials, per enabled server.

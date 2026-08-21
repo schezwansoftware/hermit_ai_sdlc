@@ -27,6 +27,12 @@ Read the actual files. The `change-set` tells you where to look; it is a claim, 
 
 ## Review order
 
+In a monorepo, check two additional things before anything else:
+
+- **Scope.** Every file in the diff belongs to a project the run declared. A file outside them is a blocker regardless of how good the change is — the human who approved the scope did not approve that.
+- **Shared packages.** If a shared package changed, find its consumers and check each one still compiles and behaves. A shared-package change reviewed in isolation is not reviewed.
+
+
 Work down this list. Stop-the-line issues come first because they invalidate everything below them.
 
 1. **Contract fidelity** — does the implementation match `architecture-spec`? Check every interface: signatures, status codes, error shapes, event payloads, schema. Deviations must appear in `## Deviations`; an undocumented one is a finding regardless of whether the code is better.

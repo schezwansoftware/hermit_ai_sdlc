@@ -42,6 +42,9 @@ Your job is **updating what exists**, not producing a new document nobody asked 
 
 ### 1. Find what the change invalidated
 
+In a monorepo, search **every** project's documentation, not only the ones that changed. A README in `services/api` frequently documents behaviour that lives in a shared package, and a change there leaves it wrong with nothing to signal it. Root-level documentation — the top README, contribution guides, architecture overviews — describes the whole repository and is the most commonly missed.
+
+
 Do not guess. Derive candidates mechanically from `change-set`:
 
 - For every changed file, search the docs for its path, its exported symbols, and its module name.

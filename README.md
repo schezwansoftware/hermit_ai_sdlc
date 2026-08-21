@@ -1,146 +1,211 @@
-# Hermit
+<h1>Hermit</h1>
 
-An agentic SDLC pipeline for GitHub Copilot workspaces. Ten agents, thirteen stages, seven human gates, six MCP servers — installed into a team's repository with one command.
+**An agentic SDLC pipeline for GitHub Copilot.** Ten role agents carry work from a ticket to a merged pull request. Each sees only the context its role declares. A human signs off at the seven points where being wrong is expensive — and no agent can forge that signature.
 
 ```bash
 npm i @hermit/cli
 ```
 
-That is the whole setup. The postinstall writes agents, instructions and MCP configuration into the workspace and never overwrites a file someone has edited by hand.
+That is the whole setup. → [Install guide](INSTALL.md) · [Concepts](docs/01-concepts.md)
 
-## What it is
+---
 
-Each agent owns one role, receives only the context its role declares, and hands off through a workflow ledger rather than by calling the next agent directly. A master **orchestrator agent** decides who works next. Humans approve at the seven points where being wrong is expensive.
+## The pipeline
 
 ```
-onboard → requirements → ux(lo/mid/hi) → architecture → planning
-  → implementation → review → qa → documentation → delivery → pull request
-         ▲                              ▲                ▲
-         └────── human gates ───────────┴────────────────┘
+ 1  onboard          onboarding    ·  project context, codebase map, glossary
+ 2  requirements     analyst       ⏸  spec + acceptance criteria
+ 3  ux_lofi          ux-designer   ⏸  structure and flow          ┐
+ 4  ux_midfi         ux-designer   ⏸  every screen × every state  ├ skipped when
+ 5  ux_hifi          ux-designer   ⏸  visual contract, tokens     ┘ nothing has a UI
+ 6  architecture     architect     ⏸  design, ADRs, impact analysis
+ 7  planning         planner       ·  work packages
+ 8  implementation   implementer   ·  the code and its tests
+ 9  review           reviewer      ⏸  review against the ratified design
+10  qa               qa            ·  test plan, execution, result
+11  documentation    documenter    ·  update what the change invalidated
+12  delivery         orchestrator  ⏸  release notes, sign-off
+13  pull_request     orchestrator  ·  opens only after 12 is approved
+
+                                   ⏸ = a human decides
 ```
 
-## The one distinction that matters
+The pull request comes **after** the human gate, never before. Opening one notifies your team, so it follows sign-off rather than preceding it.
 
-**The orchestrator is an agent.** It lives in `agents/orchestrator.md` and it has judgement: it routes work, scopes context, and stops the line for humans.
+---
 
-**The workflow server is a ledger.** It stores run state, artifacts and gate records. It decides nothing. It exists because markdown cannot remember across three IDEs, several days, and multiple people.
+## The distinction that matters
 
-Delete the server and the orchestrator is still the orchestrator — it just has amnesia. See [docs/01-concepts.md](docs/01-concepts.md).
+**The orchestrator is an agent.** It lives in `.hermit/agents/orchestrator.md` and holds the judgement: it routes work, scopes what each agent receives, and stops the line for humans.
+
+**The workflow server is a ledger.** It stores run state, artifacts and gate records, and runs mechanical checks. It decides nothing.
+
+Markdown cannot remember. A run spans days, three Copilot surfaces and several people; something has to hold *"stage 6, architecture gate open, eleven artifacts"* identically for all of them. Delete the server and the orchestrator is still the orchestrator — it just has amnesia between messages.
+
+---
+
+## Human gates are structural
+
+A gate a model can talk its way past is decoration. Approval is unreachable from the agent side:
+
+- No approval tool is exposed over MCP. There is nothing to call.
+- `decideGate` refuses any source but `cli`.
+- While a gate is open, `hermit_next_task` refuses to dispatch the next agent.
+- Every decision records who made it, in an append-only journal alongside a sha256 of each artifact.
+
+```bash
+hermit gate list
+hermit gate approve gate_architecture_7f3c
+hermit gate changes gate_architecture_7f3c -m "name the rollback path explicitly"
+```
+
+`changes` returns the stage to its agent with your comment attached to its next brief.
+
+`scripts/gate-check.mjs` proves this from the far side of a real MCP connection: it enumerates the tool list for anything resembling approval, tries dispatching past an open gate, and calls `decideGate` with a non-CLI source. All three are refused; then the CLI approves and the run advances.
+
+---
+
+## Context scoping is enforced twice
+
+An artifact reaches an agent only if the **pipeline stage** lists it as an input **and** the **agent's role** declares it readable. Neither edit alone widens a role's reach, and the brief names what it withheld so the agent knows the boundary exists.
+
+The same declarations compile into per-agent MCP allowlists in `.github/agents/*.agent.md` — so VS Code enforces them too. The analyst physically cannot call `jira_create_issue`.
+
+---
+
+## Monorepos
+
+```bash
+$ hermit projects
+
+Monorepo   9 project(s) · detected · npm-workspaces
+
+  ID                        PATH                      KIND       UI   STACK
+  apps-web                  apps/web/                 frontend   yes  node
+  apps-mobile               apps/mobile/              mobile     yes  node
+  services-api              services/api/             backend     —   node
+  services-billing          services/billing/         backend     —   go
+  services-nightly-batch    services/nightly-batch/   batch       —   node
+  infra                     infra/                    infra       —   unknown
+  docs                      docs/                     docs        —   node
+```
+
+Detection covers npm/yarn workspaces, pnpm, Lerna, Nx, Turborepo, Go workspaces, Cargo, Gradle and Maven — **unioned** with conventional directories, so `infra/` and `docs/` are found even though they sit outside the package-manager globs. Correct anything it got wrong in `.hermit/config.json`.
+
+```bash
+hermit start "Add idempotency keys to the billing webhook" --project services-api,services-billing
+```
+
+Three things follow from that scope:
+
+| | |
+|---|---|
+| **Paths narrow** | The implementer can only write inside those projects. Others are readable for context; the brief names them as out of scope. |
+| **UX stages skip** | Nothing in scope has a UI, so all three fidelity stages skip — a fact about the work, not a flag to remember. |
+| **Sections become mandatory** | `codebase-map` needs `## Projects`, `impact-analysis` needs `## Cross-Project Impact`, `work-plan` needs `## Project Sequencing`, `change-set` needs `## Projects Touched`. Checked mechanically, monorepo-only. |
+
+Hermit also emits `.github/instructions/project-<id>.instructions.md` scoped with `applyTo`, so VS Code loads a project's context when you open a file in it.
+
+---
 
 ## Agents
 
 | Agent | Owns | Produces |
 |---|---|---|
-| `orchestrator` | routing, `delivery`, `pull_request` | release notes, the PR |
-| `onboarding` | `onboard` | project context, codebase map, glossary |
-| `analyst` | `requirements` | spec, acceptance criteria |
-| `ux-designer` | `ux_lofi`, `ux_midfi`, `ux_hifi` | wireframes, design spec, tokens |
-| `architect` | `architecture` | architecture spec, ADRs, impact analysis |
-| `planner` | `planning` | work plan |
-| `implementer` | `implementation` | the code, change set |
-| `reviewer` | `review` | review report |
-| `qa` | `qa` | test plan, test report |
-| `documenter` | `documentation` | updated docs, staleness audit |
+| `orchestrator` | routing · delivery · pull_request | release notes, the pull request |
+| `onboarding` | onboard | project context, codebase map, glossary |
+| `analyst` | requirements | requirements spec, acceptance criteria |
+| `ux-designer` | ux_lofi · ux_midfi · ux_hifi | wireframes, design spec, design tokens |
+| `architect` | architecture | architecture spec, ADRs, impact analysis |
+| `planner` | planning | work plan, tracker subtasks |
+| `implementer` | implementation | the code, tests, change set |
+| `reviewer` | review | review report |
+| `qa` | qa | test plan, test report |
+| `documenter` | documentation | updated docs, staleness audit |
 
-Definitions live in `.hermit/agents/*.md`. Edit them; run `npx hermit sync`.
+Backed by 19 skill packs and 2 knowledge packs. All markdown, all in `.hermit/`, all yours to edit — then `hermit sync`.
 
-## Human gates are real
+**Start by replacing `knowledge/engineering-standards`** with your team's real standards. It is injected into every agent's context and is the cheapest way to make all ten behave like your team rather than a generic one.
 
-Seven stages require a person. This is enforced structurally, not by asking a model nicely:
-
-- No MCP tool can approve a gate. There is no such tool to call.
-- `decideGate` refuses any source other than `cli`.
-- While a gate is open, `hermit_next_task` refuses to dispatch the next agent.
-- Every decision records who made it and when, in an append-only journal.
-
-```bash
-npx hermit gate list
-npx hermit gate approve <gate-id>
-npx hermit gate changes <gate-id> -m "name the rollback path explicitly"
-```
-
-`changes` returns the stage to its agent with your comment attached to the next brief.
-
-## Context scoping is enforced twice
-
-An agent sees an artifact only if **both** the pipeline stage lists it as an input **and** the agent's role declares it readable. Neither a pipeline edit nor an agent edit alone widens a role's reach.
-
-The same declarations compile into per-agent MCP allowlists in `.github/agents/*.agent.md`, so VS Code enforces them too — the analyst physically cannot call `jira_create_issue`.
-
-## The three Copilot surfaces
-
-They do not read the same files, so Hermit compiles for each:
-
-| | VS Code | Copilot CLI | IntelliJ |
-|---|---|---|---|
-| `.github/copilot-instructions.md` | ✓ | ✓ | ✓ |
-| `AGENTS.md` | ✓ | ✓ | partial |
-| `.github/agents/*.agent.md` | ✓ | ✓ | ✗ |
-| MCP config | `.vscode/mcp.json` | `.copilot/mcp-config.json` | IDE settings |
-
-Because IntelliJ loads no agent files, every playbook is also served over MCP via `hermit_get_agent`. Same text, same scoping, same gates — you address agents by asking rather than selecting. See [docs/hermit-intellij-setup.md](docs/hermit-intellij-setup.md) once generated.
+---
 
 ## MCP servers
 
-| Server | Tools | Notes |
-|---|---|---|
+| Server | Tools | |
+|---|---:|---|
 | `hermit` | 10 | The workflow ledger. No credentials. |
 | `jira` | 9 | Issues, JQL, comments, links, subtasks, transitions |
-| `confluence` | 6 | Search, pages, children, attachments; writes opt-in |
-| `sharepoint` | 5 | Graph API, client credentials; uploads opt-in |
-| `figma` | 11 | Reads over REST; **authoring via the plugin bridge** |
-| `scm` | 9 | GitHub, GitLab, Bitbucket, CodeCommit behind one surface |
+| `confluence` | 6 | Search, pages, children, attachments · writes opt-in |
+| `sharepoint` | 5 | Microsoft Graph, client credentials · uploads opt-in |
+| `figma` | 11 | Reads over REST · authoring via plugin bridge |
+| `scm` | 9 | GitHub · GitLab · Bitbucket · CodeCommit, one surface |
 
-### Two things worth knowing
+**Figma cannot create layers over REST.** Only the Plugin API can, and it runs inside Figma. `figma_create_design` sends a scene-graph spec to a companion plugin over loopback. Without it, the tool returns the spec and reports the bridge disconnected — agents record it and continue rather than retrying.
 
-**Figma cannot create layers over REST.** Only the Plugin API can. `figma_create_design` sends a scene-graph spec to the companion plugin in `packages/mcp-figma/plugin`; without it the tool returns the spec and reports the bridge disconnected rather than failing. Agents are instructed to degrade to a written spec, not to retry.
+**One SCM server, four providers.** `scm_create_pull_request` behaves the same on all four; the adapter absorbs the differences (GitLab calls it a merge request; CodeCommit needs SigV4 rather than a token). Agent playbooks never name a vendor.
 
-**One SCM server, four providers.** `scm_create_pull_request` works the same on all four; the adapter absorbs the differences (GitLab calls it a merge request, CodeCommit needs SigV4 rather than a token). Agent playbooks never name a vendor. Provider comes from `.hermit/config.json` or is inferred from the git remote.
+---
+
+## The three Copilot surfaces
+
+| Loads | VS Code | Copilot CLI | IntelliJ |
+|---|---|---|---|
+| `.github/copilot-instructions.md` | yes | yes | yes |
+| `AGENTS.md` | yes | yes | partial |
+| `.github/agents/*.agent.md` | yes | yes | **no** |
+| MCP config | `.vscode/mcp.json` | `.copilot/mcp-config.json` | IDE settings |
+
+Because IntelliJ loads no agent files, every playbook is **also** served over MCP through `hermit_get_agent` — the one channel all three support identically. Same text, same scoping, same gates.
+
+---
 
 ## Commands
 
 ```bash
-npx hermit init                       # install into this workspace
-npx hermit doctor                     # config, credentials, pipeline integrity
-npx hermit start "<intent>" --jira K  # begin a run ( --no-ui skips UX stages )
-npx hermit status                     # where things stand
-npx hermit next                       # print the current stage brief
-npx hermit gate approve <id>          # humans only
-npx hermit artifacts [name]           # list or print artifacts
-npx hermit journal                    # the audit trail
-npx hermit sync                       # recompile after editing .hermit/
+hermit init                        # install into this workspace
+hermit doctor                      # config, credentials, pipeline integrity
+hermit projects                    # what this repo contains and how it was classified
+
+hermit start "<intent>" --jira K   # begin a run   ( --project a,b   --no-ui )
+hermit status                      # where things stand
+hermit next                        # print the current stage brief
+hermit resume [<run-id>]           # reopen a blocked run
+
+hermit gate list | approve | changes | reject
+hermit artifacts [name]            # list or print artifacts
+hermit journal                     # the audit trail
+hermit sync                        # recompile after editing .hermit/
 ```
 
-## Verifying it
+---
+
+## Verifying
 
 ```bash
-npm test                              # full pipeline through the state machine
-npm run check:mcp -- <workspace>      # all six servers handshake over stdio
-npm run check:gates -- <workspace>    # gate enforcement across the MCP boundary
+npm test                            # full pipeline through the state machine
+npm run check:monorepo              # scoping, stage skipping, conditional criteria
+npm run check:mcp   -- <workspace>  # all six servers handshake over stdio
+npm run check:gates -- <workspace>  # gate enforcement across the MCP boundary
 ```
 
-`check:gates` proves the claim that matters: an agent connected over real MCP cannot approve a gate, cannot find a tool that would, and cannot dispatch the next stage while one is open — and a human with a terminal can.
-
-## Customising
-
-`.hermit/` is yours. It survives `hermit sync` and reinstalls.
-
-- **`knowledge/engineering-standards/SKILL.md`** — replace with your team's real standards. It is injected into every agent's context and is the cheapest way to make all ten agents behave like your team.
-- **`agents/*.md`** — edit playbooks and scopes freely.
-- **`config.json`** — enabled servers, SCM provider, per-server write permissions.
-
-Writes to Confluence and SharePoint are **off by default**, because those edits are visible company-wide.
+---
 
 ## Layout
 
 ```
 packages/
-  core/            state machine, gates, context scoping, registry
-  agents/          10 agents, 19 skills, 2 knowledge packs (markdown)
-  cli/             hermit CLI + the host compiler
+  core/            state machine, gates, context scoping, project detection
+  agents/          10 agents · 19 skills · 2 knowledge packs (markdown)
+  cli/             hermit CLI and the host compiler
   mcp-shared/      server bootstrap, HTTP client, config
   mcp-workflow/    the ledger
   mcp-jira/  mcp-confluence/  mcp-sharepoint/  mcp-figma/  mcp-scm/
 ```
 
 Plain ESM, no build step: what you read is what runs, and `npm i` needs no compile.
+
+---
+
+## Status
+
+The workflow server is exercised end to end by the checks above. The five integration servers are written against their documented APIs but **have not been run against live credentials** — expect to shake out auth and field-shape details on first contact. `hermit doctor` tells you exactly what each one needs.

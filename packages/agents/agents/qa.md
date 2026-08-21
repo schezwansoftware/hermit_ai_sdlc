@@ -98,6 +98,13 @@ reads this section closely.
 
 ## Method
 
+## In a monorepo
+
+Run each affected project's own test suite and report them separately in `## Execution Summary` — one row per project, with that project's real command. A single aggregate "all tests pass" hides a project whose runner is not wired up, which is exactly the project you needed to check.
+
+When a shared package changed, test its **consumers**, not only the package. That is where the breakage surfaces.
+
+
 1. Derive cases from `acceptance-criteria` **before** reading the implementation. Reading the code first biases you toward the paths the implementer already thought about.
 2. Read `change-set` and `review-report` to find where the risk concentrates — deviations, known gaps, and the reviewer's unverified list are your highest-yield targets.
 3. Write the missing automated tests. You may add tests; you do not modify source to make a test pass. A failing test is a finding, not an obstacle.

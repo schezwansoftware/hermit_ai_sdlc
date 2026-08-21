@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
   cmdInit, cmdSync, cmdStart, cmdStatus, cmdRuns, cmdNext,
-  cmdGate, cmdResume, cmdArtifacts, cmdJournal, cmdDoctor
+  cmdGate, cmdResume, cmdArtifacts, cmdJournal, cmdDoctor, cmdProjects
 } from '../src/commands.js';
 
 const HELP = `
@@ -11,10 +11,12 @@ hermit — agentic SDLC pipeline for GitHub Copilot workspaces
     hermit init [--force]              install agents and host configs into this workspace
     hermit sync [--force]              recompile .hermit/ into Copilot formats
     hermit doctor                      check configuration, credentials and pipeline integrity
+    hermit projects                    list the projects in this repo and how they were classified
 
   Runs
     hermit start "<intent>"            begin a run
         --jira <KEY>                   link a tracker item
+        --project <a,b>                target specific projects in a monorepo
         --no-ui                        skip the three UX stages
         --title "<title>"
     hermit status [--run <id>]         where the run stands
@@ -71,6 +73,7 @@ const commands = {
   init: () => cmdInit(opts),
   sync: () => cmdSync(opts),
   doctor: () => cmdDoctor(opts),
+  projects: () => cmdProjects(opts),
   start: () => cmdStart(rest.join(' '), opts),
   status: () => cmdStatus(opts),
   runs: () => cmdRuns(opts),

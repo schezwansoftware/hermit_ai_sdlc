@@ -95,6 +95,18 @@ Each with why it was rejected. "Worse" is not a reason; name the trade.
 
 ### `impact-analysis`
 
+In a monorepo this artifact must also carry a `## Cross-Project Impact` section — checked by the pipeline:
+
+```markdown
+## Cross-Project Impact
+| Project | In scope | Effect | Breaking | Migration |
+```
+
+List every project the change reaches, including ones outside the run's scope. A change that must edit an out-of-scope project is not yours to absorb: state it plainly here, because widening scope is a human decision made at your gate.
+
+Shared packages deserve their own row. Changing one affects every consumer, most of which nobody remembers.
+
+
 ```markdown
 # Impact Analysis
 

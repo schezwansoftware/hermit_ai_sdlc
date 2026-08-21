@@ -92,6 +92,23 @@ Domain terms with definitions, and — critically — the **code identifier** ea
 
 ## Method
 
+## In a monorepo
+
+Your brief tells you whether this repository holds several projects. When it does, `codebase-map` must carry a `## Projects` section — the pipeline checks for it:
+
+```markdown
+## Projects
+| Project | Path | Kind | Stack | Owns | Depends on |
+|---|---|---|---|---|---|
+```
+
+`Owns` is the responsibility in one phrase. `Depends on` lists sibling projects, which is the single most useful column you produce — it determines what a change can break.
+
+Then map, per project: its entry points, its test command, and its build command. "Run the tests" means something different in each project, and every later agent needs the right one.
+
+Treat shared packages with particular care. A change inside one has the widest blast radius in the repository, and the projects that consume it are rarely obvious from its own directory.
+
+
 Work outside-in, cheapest signal first:
 
 1. **Manifest sweep.** Read package manifests, lockfiles, CI config, Dockerfiles, IaC. This gives you the stack with citations and costs almost nothing.

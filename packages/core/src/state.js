@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { DEFAULT_PIPELINE } from './pipeline.js';
+import { hasUiProject } from './projects.js';
 import { ensureDir, readJson, writeJson } from './paths.js';
 
 export const STAGE_STATUS = /** @type {const} */ ({
@@ -19,12 +20,24 @@ export function newRunId(now = new Date()) {
 /**
  * @param {ReturnType<import('./paths.js').layout>} paths
  */
-export function createRun(paths, { title, intent, jiraKey = null, flags = [], pipeline = DEFAULT_PIPELINE }) {
+export function createRun(paths, {
+  title, intent, jiraKey = null, flags = [], pipeline = DEFAULT_PIPELINE,
+  projects = [], selectedProjects = []
+}) {
   const id = newRunId();
   const now = new Date().toISOString();
+
+  // In a monorepo, a run that touches only backend and infra has no interface to
+  // design. Skipping the three UX stages is then a fact about the work, not a
+  // flag someone has to remember to pass.
+  const uiInScope = projects.length ? hasUiProject(projects, selectedProjects) : true;
+
   const stages = {};
   for (const stage of pipeline.stages) {
-    const skipped = stage.skipWhen && flags.includes(stage.skipWhen);
+    const skipped =
+      stage.skipWhen === 'no-ui'
+        ? flags.includes('no-ui') || !uiInScope
+        : Boolean(stage.skipWhen && flags.includes(stage.skipWhen));
     stages[stage.id] = {
       status: skipped ? STAGE_STATUS.SKIPPED : STAGE_STATUS.PENDING,
       agent: stage.agent,
@@ -44,6 +57,9 @@ export function createRun(paths, { title, intent, jiraKey = null, flags = [], pi
     flags,
     pipelineId: pipeline.id,
     pipelineVersion: pipeline.version,
+    monorepo: projects.length > 1,
+    projects,
+    selectedProjects: selectedProjects.length ? selectedProjects : projects.map((x) => x.id),
     status: 'active',
     currentStage: firstActionable(pipeline, stages),
     stages,
@@ -53,7 +69,7 @@ export function createRun(paths, { title, intent, jiraKey = null, flags = [], pi
   ensureDir(paths.runDir(id));
   writeJson(paths.runFile(id), run);
   setActiveRun(paths, id);
-  journal(paths, id, { event: 'run.created', title, intent, jiraKey, flags });
+  journal(paths, id, { event: 'run.created', title, intent, jiraKey, flags, projects: run.selectedProjects, uiInScope });
   return run;
 }
 

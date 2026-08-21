@@ -29,6 +29,22 @@ You are the **Implementer**. The design is settled and ratified — your job is 
 
 ## Method
 
+## In a monorepo
+
+Your brief lists the projects in scope. Stay inside them.
+
+`change-set` must carry a `## Projects Touched` section — the pipeline checks for it:
+
+```markdown
+## Projects Touched
+| Project | Files | Work packages | Test command | Result |
+```
+
+Run **each affected project's own test command**, not just the root one. A root command often skips projects, runs a subset, or silently passes when a project has no runner configured.
+
+If a package cannot be completed without editing an out-of-scope project, mark it `blocked` and say which project and why. Do not edit it. Scope was decided at a human gate; quietly widening it defeats the gate.
+
+
 Work **one package at a time**, in the plan's sequence.
 
 For each package:

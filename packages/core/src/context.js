@@ -1,6 +1,7 @@
 import { readArtifact } from './artifacts.js';
 import { artifactSpec } from './artifacts.js';
 import { effectiveMcpTools } from './servers.js';
+import { scopePathsToProjects } from './projects.js';
 
 const DEFAULT_BUDGET = 120_000; // characters of artifact text per bundle
 
@@ -43,8 +44,17 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
 
   const missing = allowed.filter((id) => !artifacts.some((a) => a.id === id));
 
+  // Narrow declared path globs to the projects this run targets, so an agent
+  // working on the API is not handed the whole monorepo.
+  const projects = run.projects ?? [];
+  const selected = run.selectedProjects ?? [];
+  const inScope = projects.filter((p) => selected.includes(p.id));
+
   return {
     runId: run.id,
+    monorepo: Boolean(run.monorepo),
+    projects: inScope.map((p) => ({ id: p.id, path: p.path, kind: p.kind, stack: p.stack, ui: p.ui })),
+    projectsOutOfScope: projects.filter((p) => !selected.includes(p.id)).map((p) => p.id),
     stage: { id: stage.id, title: stage.title, gate: stage.gate },
     intent: run.intent,
     jiraKey: run.jiraKey,
@@ -53,8 +63,8 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
     missingInputs: missing,
     withheld: deniedByAgent,
     allowedMcpTools: effectiveMcpTools(agent?.context?.reads?.mcp ?? []),
-    readablePaths: agent?.context?.reads?.paths ?? [],
-    writablePaths: agent?.context?.writes?.paths ?? [],
+    readablePaths: scopePathsToProjects(agent?.context?.reads?.paths ?? [], projects, selected),
+    writablePaths: scopePathsToProjects(agent?.context?.writes?.paths ?? [], projects, selected),
     skills: (agent?.skills ?? []).map((id) => registry.skillsById[id]).filter(Boolean).map(pick),
     knowledge: (agent?.knowledge ?? []).map((id) => registry.knowledgeById[id]).filter(Boolean).map(pick),
     budget: { limit: budget, used: spent, truncated }
@@ -89,6 +99,22 @@ export function renderBundle(bundle, { playbook, contract }) {
   if (bundle.jiraKey) out.push(`- **Tracker**: ${bundle.jiraKey}`);
   out.push(`- **Intent**: ${bundle.intent}`);
   if (bundle.flags?.length) out.push(`- **Flags**: ${bundle.flags.join(', ')}`);
+  if (bundle.monorepo) {
+    out.push('');
+    out.push('### Monorepo scope');
+    out.push('');
+    out.push('This repository holds several projects. **This run targets only these:**');
+    out.push('');
+    out.push('| Project | Path | Kind | Stack |');
+    out.push('|---|---|---|---|');
+    for (const p of bundle.projects) {
+      out.push(`| \`${p.id}\` | \`${p.path}/\` | ${p.kind} | ${(p.stack ?? []).join(', ')} |`);
+    }
+    if (bundle.projectsOutOfScope?.length) {
+      out.push('');
+      out.push(`Out of scope: ${bundle.projectsOutOfScope.map((id) => `\`${id}\``).join(', ')}. Read them for context if your role permits, but do not change them. A change that spans into an out-of-scope project needs a human decision, not your judgement — raise it and stop.`);
+    }
+  }
   out.push('');
   out.push('## Your playbook');
   out.push('');
