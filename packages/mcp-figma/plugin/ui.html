@@ -1,0 +1,55 @@
+<style>
+  body { font: 12px -apple-system, system-ui, sans-serif; margin: 0; padding: 14px; color: #333; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #c00; flex: none; }
+  .dot.on { background: #0a0; }
+  input { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font: inherit; }
+  #log { margin-top: 10px; max-height: 96px; overflow: auto; font-family: ui-monospace, monospace; font-size: 11px; color: #666; }
+  label { display: block; margin-bottom: 4px; color: #666; }
+</style>
+
+<div class="row"><span class="dot" id="dot"></span><strong id="state">Connecting…</strong></div>
+<label for="url">Bridge URL</label>
+<input id="url" value="ws://127.0.0.1:8473" />
+<div id="log"></div>
+
+<script>
+  let ws = null, context = null;
+  const dot = document.getElementById('dot');
+  const state = document.getElementById('state');
+  const log = document.getElementById('log');
+
+  const say = (m) => { log.innerHTML = new Date().toLocaleTimeString() + ' ' + m + '<br>' + log.innerHTML; };
+
+  onmessage = (event) => {
+    const msg = event.data.pluginMessage;
+    if (!msg) return;
+    if (msg.type === 'context') { context = msg; connect(); }
+    if (msg.type === 'result' && ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ id: msg.id, ok: msg.ok, result: msg.result, error: msg.error }));
+      say(msg.ok ? 'built ' + ((msg.result && msg.result.frames || []).length) + ' frame(s)' : 'error: ' + msg.error);
+    }
+  };
+
+  function connect() {
+    const url = document.getElementById('url').value;
+    try { ws = new WebSocket(url); } catch (e) { return fail(e.message); }
+
+    ws.onopen = () => {
+      dot.classList.add('on');
+      state.textContent = 'Connected';
+      ws.send(JSON.stringify({ type: 'hello', fileKey: context.fileKey, fileName: context.fileName, user: context.user, pluginVersion: '0.1.0' }));
+      say('connected to ' + url);
+    };
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      say('command: ' + msg.command);
+      parent.postMessage({ pluginMessage: { type: 'command', id: msg.id, command: msg.command, payload: msg.payload } }, '*');
+    };
+    ws.onclose = () => { fail('disconnected — retrying in 3s'); setTimeout(connect, 3000); };
+    ws.onerror = () => fail('connection error');
+  }
+
+  function fail(m) { dot.classList.remove('on'); state.textContent = 'Disconnected'; say(m); }
+  document.getElementById('url').addEventListener('change', () => { if (ws) ws.close(); connect(); });
+</script>

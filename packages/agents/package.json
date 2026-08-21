@@ -1,0 +1,9 @@
+{
+  "name": "@hermit/agents",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Hermit agent definitions, skills and knowledge packs (markdown)",
+  "main": "index.js",
+  "exports": { ".": "./index.js", "./agents/*": "./agents/*", "./skills/*": "./skills/*" },
+  "files": ["agents", "skills", "knowledge", "pipelines", "index.js"]
+}

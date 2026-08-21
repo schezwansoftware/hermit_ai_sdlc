@@ -1,0 +1,159 @@
+/**
+ * End-to-end smoke test of the Hermit state machine, run against a throwaway
+ * workspace. Exercises: run creation, context scoping, exit-criteria refusal,
+ * HITL gate blocking, CLI-only gate decisions, changes_requested re-entry, and
+ * full pipeline completion.
+ */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+import {
+  layout, loadRegistry, DEFAULT_PIPELINE, createRun, loadRun, requireActiveRun,
+  nextTask, submitArtifact, requestHandoff, runStatus, decideGate, openGates, getStage, saveRun
+} from '@hermit/core';
+
+const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hermit-smoke-'));
+const paths = layout(root);
+
+// Lay out a workspace the way `hermit init` will.
+fs.mkdirSync(path.join(root, '.hermit'), { recursive: true });
+for (const d of ['agents', 'skills', 'knowledge']) {
+  fs.cpSync(path.join(repo, 'packages/agents', d), path.join(root, '.hermit', d), { recursive: true });
+}
+
+const reg = loadRegistry(paths);
+console.log(`workspace: ${root}`);
+console.log(`agents: ${reg.agents.length}  skills: ${reg.skills.length}  knowledge: ${reg.knowledge.length}`);
+assert.equal(reg.agents.length, 10, 'expected 10 agents');
+
+// Every stage must resolve to a real agent, and every input must be produced upstream.
+const produced = new Set();
+for (const s of DEFAULT_PIPELINE.stages) {
+  const a = reg.agentsById[s.agent];
+  assert.ok(a, `stage ${s.id} references missing agent ${s.agent}`);
+  assert.ok(a.stages.includes(s.id), `agent ${s.agent} does not claim stage ${s.id}`);
+  for (const inp of s.inputs ?? []) {
+    assert.ok(produced.has(inp), `stage ${s.id} consumes "${inp}" before any stage produces it`);
+    assert.ok(
+      (a.context?.reads?.artifacts ?? []).includes(inp),
+      `agent ${s.agent} lacks read scope for its own stage input "${inp}"`
+    );
+  }
+  for (const out of s.outputs ?? []) {
+    assert.ok(
+      (a.context?.writes?.artifacts ?? []).includes(out),
+      `agent ${s.agent} lacks write scope for its own stage output "${out}"`
+    );
+    produced.add(out);
+  }
+}
+console.log('✓ pipeline graph is consistent (inputs produced upstream, scopes match)');
+
+const run = createRun(paths, { title: 'Cart survives session expiry', intent: 'Preserve the cart when a session expires during checkout', jiraKey: 'PROJ-412', flags: [] });
+console.log(`✓ run created: ${run.id}`);
+
+// --- Stage 1: onboarding, with a deliberate premature handoff ---
+let r = loadRun(paths, run.id);
+let task = nextTask({ paths, run: r, registry: reg });
+assert.equal(task.state, 'task');
+assert.equal(task.agent.id, 'onboarding');
+assert.ok(task.rendered.includes('## Required output'), 'brief must state the output contract');
+
+let refused = requestHandoff({ paths, run: r, registry: reg, agentId: 'onboarding' });
+assert.equal(refused.state, 'blocked', 'handoff with no artifacts must be refused');
+assert.ok(refused.message.includes('project-context'));
+console.log(`✓ premature handoff refused: ${refused.criteria.filter(c=>!c.ok).length} criteria failed`);
+
+// Writing an artifact the stage does not own must be rejected.
+assert.throws(
+  () => submitArtifact({ paths, run: r, registry: reg, artifactId: 'architecture-spec', content: 'x', agentId: 'onboarding' }),
+  /does not produce/,
+  'stage output contract must be enforced'
+);
+console.log('✓ out-of-contract artifact submission rejected');
+
+// --- Drive the whole pipeline ---
+const BODIES = {
+  'project-context': '# Project Context\n\n## Purpose\nCheckout.\n\n## Tech Stack\n| Layer | Technology |\n|---|---|\n| API | Node |\n\n## Runtime Topology\nOne service.\n\n## External Dependencies\nStripe.\n\n## Conventions\nVitest.\n\n## Ownership\nPayments team.\n\n## Known Constraints\nPCI.\n\n## Confidence & Gaps\nNo ADRs found.\n',
+  'codebase-map': '# Codebase Map\n\n## Entry Points\nsrc/server.js\n\n## Module Boundaries\ncheckout\n\n## Data Model\nCart\n\n## Cross-Cutting Concerns\nauth\n\n## Test Topology\ntest/\n\n## Change Hotspots\nsrc/checkout.js\n',
+  glossary: '# Glossary\n\n- **Cart** → `CartAggregate`\n',
+  'requirements-spec': '# Requirements\n\n## Context\nPROJ-412.\n\n## In Scope\n1. Preserve cart.\n\n## Out of Scope\nGuest checkout.\n\n## Functional Requirements\nFR-1 Cart survives expiry.\n\n## Non-Functional Requirements\np95 < 300ms.\n\n## Data\nCart rows.\n\n## Dependencies\nNone.\n\n## Assumptions\nSessions are server-side.\n\n## Decisions Required\nNone outstanding.\n',
+  'acceptance-criteria': '# Acceptance Criteria\n\n## AC-1 — FR-1 — cart preserved\n**Given** an expired session\n**When** the user submits checkout\n**Then** they are redirected to sign-in and the cart is preserved\n\n**Verified by**: integration test\n',
+  'ux-lofi': '# Low-Fidelity\n\n## User Flows\n1. Expired → sign-in → cart intact\n\n## Screen Inventory\n| ID | Screen |\n|---|---|\n| S1 | Sign-in |\n\n## Wireframes\n```\n+---+\n```\n\n## Open Questions\nNone.\n',
+  'ux-midfi': '# Mid-Fidelity\n\n## States\n| Screen | State |\n|---|---|\n| S1 | error |\n\n## Interaction Specification\nSubmit.\n\n## Content & Messaging\n"Your session expired."\n\n## Responsive Behaviour\n1 breakpoint.\n\n## Validation Rules\nRequired.\n',
+  'ux-hifi': '# High-Fidelity\n\n## Design System Usage\n| Element | Component |\n|---|---|\n| Banner | Alert |\n\n## Visual Specification\ntokens only.\n\n## Accessibility\nContrast 4.6:1, keyboard path defined, live region on error.\n\n## Asset Manifest\nNone.\n\n## Implementation Notes\nUse Alert.\n',
+  'design-tokens': '{"color.text.primary":"#111"}',
+  'architecture-spec': '# Architecture\n\n## Approach\nPersist cart before redirect.\n\n## Component Map\n| Component | Path |\n|---|---|\n| checkout | src/checkout.js |\n\n## Interfaces\nPOST /checkout\n\n## Data Design\ncarts table.\n\n## Sequence\n1. expire 2. persist 3. redirect\n\n## Security\nAuthZ on cart owner.\n\n## Observability\nMetric cart.preserved\n\n## Performance\np95 300ms.\n\n## Alternatives Considered\nClient storage — rejected, PCI.\n',
+  adr: '# ADR-1: Persist cart server-side\n\n## Status\nProposed\n\n## Context\nPCI.\n\n## Decision\nWe will persist server-side.\n\n## Consequences\n### Positive\nSurvives device change.\n### Negative\nExtra write on a hot path.\n### Neutral\nNew table.\n\n## Alternatives\nLocalStorage — rejected: PCI scope.\n',
+  'impact-analysis': '# Impact Analysis\n\n## Blast Radius\ncheckout only.\n\n## Breaking Changes\nNone.\n\n## Risks\n- Silent write failure — medium — add alert.\n\n## Rollout\nFlag.\n\n## Rollback\nDrop the flag; migration is additive.\n\n## Effort Signal\nS.\n',
+  'work-plan': '# Work Plan\n\n## Sequence\nWP-1\n\n## Work Packages\n- WP-1 persist cart — satisfies AC-1 — tests: checkout.test.js\n\n## Critical Path\nWP-1\n\n## Parallelisation\nNone.\n\n## Deferred\nGuest checkout.\n',
+  'change-set': '# Change Set\n\n## Summary\nCart persisted.\n\n## Files Changed\n| File | Change |\n|---|---|\n| src/checkout.js | modified |\n\n## Work Packages Completed\n| WP | Status |\n|---|---|\n| WP-1 | complete |\n\n## Deviations\nNone.\n\n## Tests\ncheckout.test.js — npm test\n\n## Verification Performed\n`npm test` → 41 passed.\n\n## Known Gaps\nNone.\n',
+  'review-report': '# Code Review\n\n**Verdict**: approve\n\n## Summary\nMatches the design.\n\n## Blockers\nNone.\n\n## Findings\nNone.\n\n## Nits\nNone.\n\n## AC Coverage\n| AC | Implemented | Tested |\n|---|---|---|\n| AC-1 | yes | yes |\n\n## Deviations Reviewed\nNone.\n\n## What I Verified\nRead src/checkout.js; ran npm test.\n',
+  'test-plan': '# Test Plan\n\n## Scope\nCheckout.\n\n## Traceability\n| AC | Test |\n|---|---|\n| AC-1 | TC-1 |\n\n## Test Cases\nTC-1.\n\n## Edge Cases & Negative Tests\nConcurrent expiry.\n\n## Non-Functional Verification\nLoad test.\n\n## Environment\nLocal.\n\n## Out of Scope\nGuest.\n',
+  'test-report': '# Test Report\n\n**Result**: pass\n\n## Execution Summary\n| Suite | Total | Passed |\n|---|---|---|\n| unit | 41 | 41 |\n\n## Commands Run\n`npm test` exit 0\n\n## AC Verification\n| AC | Result |\n|---|---|\n| AC-1 | pass |\n\n## Failures\nNone.\n\n## Defects Raised\nNone.\n\n## Coverage\n82%\n\n## Residual Risk\nLoad untested at peak.\n',
+  'docs-update': '# Documentation Update\n\n## Files Updated\n| File | Change | Why |\n|---|---|---|\n| docs/checkout.md | updated | new persistence step |\n\n## Staleness Audit\n| Document | Verdict |\n|---|---|\n| README.md | unaffected |\n\n## New Documents\nNone.\n\n## External Follow-ups\nNone.\n\n## Not Updated\nRunbook — no operational change.\n',
+  'release-notes': '# Release Notes\n\n## Summary\nCart survives expiry.\n\n## Changes\nWP-1 (PROJ-412)\n\n## Verification\n41 tests pass.\n\n## Risk & rollback\nAdditive migration; disable the flag to roll back.\n\n## Documentation\ndocs/checkout.md updated.\n\n## Follow-ups\nLoad test at peak.\n',
+  'pull-request': '# Pull Request\n\n**URL**: https://github.com/acme/shop/pull/918\n**Provider**: github\n**Branch**: feat/proj-412 → main\n\n## Body Submitted\nWhat/Why/How.\n\n## Linked\nPROJ-412\n\n## Reviewers Requested\npayments\n\n## Checks\npending\n'
+};
+
+let gatesHit = 0, stagesDone = 0, changesRequestedTested = false;
+
+for (let guard = 0; guard < 40; guard++) {
+  let cur = loadRun(paths, run.id);
+  const st = runStatus({ paths, run: cur });
+  if (st.status === 'completed') break;
+
+  cur = loadRun(paths, run.id);
+  const open = openGates(cur);
+  if (open.length) {
+    const g = open[0];
+    gatesHit++;
+    // An agent must never be able to approve. Prove it.
+    assert.throws(
+      () => decideGate(paths, cur, g.id, 'approve', { decidedBy: 'agent', source: 'mcp' }),
+      /only be made by a human/,
+      'MCP-sourced gate approval must be refused'
+    );
+    // Exercise the changes_requested path once, on the architecture gate.
+    if (g.stageId === 'architecture' && !changesRequestedTested) {
+      changesRequestedTested = true;
+      decideGate(paths, cur, g.id, 'changes_requested', { decidedBy: 'harshit', comment: 'Name the rollback path explicitly.', source: 'cli' });
+      saveRun(paths, cur);
+      const back = nextTask({ paths, run: loadRun(paths, run.id), registry: reg });
+      assert.equal(back.state, 'task');
+      assert.equal(back.stage.id, 'architecture');
+      assert.ok(back.rendered.includes('Reviewer feedback'), 're-entry must carry the reviewer comment');
+      console.log('✓ changes_requested returned the stage to architect with feedback attached');
+      continue;
+    }
+    decideGate(paths, cur, g.id, 'approve', { decidedBy: 'harshit', source: 'cli' });
+    saveRun(paths, cur);
+    continue;
+  }
+
+  cur = loadRun(paths, run.id);
+  const t = nextTask({ paths, run: cur, registry: reg });
+  if (t.state === 'complete') break;
+  assert.equal(t.state, 'task', `unexpected state ${t.state}: ${t.message}`);
+
+  const stage = getStage(DEFAULT_PIPELINE, t.stage.id);
+  for (const out of stage.outputs ?? []) {
+    if (!BODIES[out]) throw new Error(`smoke test has no body for artifact "${out}"`);
+    submitArtifact({ paths, run: cur, registry: reg, artifactId: out, content: BODIES[out], agentId: stage.agent });
+  }
+  const h = requestHandoff({ paths, run: loadRun(paths, run.id), registry: reg, agentId: stage.agent, summary: `did ${stage.id}` });
+  assert.ok(['advanced', 'awaiting_gate', 'complete'].includes(h.state), `handoff refused at ${stage.id}: ${h.message}`);
+  stagesDone++;
+}
+
+const final = runStatus({ paths, run: loadRun(paths, run.id) });
+assert.equal(final.status, 'completed', `run did not complete: ${JSON.stringify(final.stages.filter(s=>s.status!=='done'))}`);
+assert.equal(gatesHit, 8, `expected 8 gate encounters (7 gates + 1 re-review), got ${gatesHit}`);
+
+console.log(`✓ ${stagesDone} stage completions, ${gatesHit} gate encounters`);
+console.log(`✓ run completed: ${final.artifacts.length} artifacts`);
+console.log('\nALL SMOKE CHECKS PASSED');
+fs.rmSync(root, { recursive: true, force: true });

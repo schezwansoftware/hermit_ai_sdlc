@@ -1,0 +1,7 @@
+node_modules/
+.hermit/runs/
+.hermit/cache/
+*.log
+.DS_Store
+.env
+.env.*

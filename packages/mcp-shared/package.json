@@ -1,0 +1,14 @@
+{
+  "name": "@hermit/mcp-shared",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared MCP server bootstrap, HTTP client and config loading for Hermit servers",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "files": ["src"],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.8"
+  },
+  "engines": { "node": ">=20.10.0" }
+}

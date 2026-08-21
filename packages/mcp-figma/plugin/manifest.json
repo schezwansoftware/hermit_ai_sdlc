@@ -1,0 +1,12 @@
+{
+  "name": "Hermit Design Bridge",
+  "id": "hermit-design-bridge",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": ["ws://127.0.0.1:8473", "ws://localhost:8473"],
+    "reasoning": "Connects to the locally running Hermit MCP server to receive design specs. No external network access."
+  }
+}

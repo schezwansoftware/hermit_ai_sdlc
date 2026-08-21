@@ -1,0 +1,11 @@
+{
+  "name": "@hermit/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Hermit core: pipeline state machine, HITL gates, context scoping, agent registry",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "files": ["src"],
+  "dependencies": { "yaml": "^2.5.0" },
+  "engines": { "node": ">=20.10.0" }
+}

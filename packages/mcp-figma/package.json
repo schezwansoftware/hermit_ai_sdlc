@@ -1,0 +1,21 @@
+{
+  "name": "@hermit/mcp-figma",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "hermit-mcp-figma": "src/index.js"
+  },
+  "main": "src/index.js",
+  "files": [
+    "src",
+    "plugin"
+  ],
+  "dependencies": {
+    "@hermit/mcp-shared": "0.1.0",
+    "zod": "^3.23.8",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=20.10.0"
+  }
+}

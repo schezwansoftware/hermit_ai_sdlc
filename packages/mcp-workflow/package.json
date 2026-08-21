@@ -1,0 +1,15 @@
+{
+  "name": "@hermit/mcp-workflow",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Hermit workflow ledger: run state, scoped context bundles, artifacts and gate status over MCP",
+  "bin": { "hermit-mcp-workflow": "src/index.js" },
+  "main": "src/index.js",
+  "files": ["src"],
+  "dependencies": {
+    "@hermit/core": "0.1.0",
+    "@hermit/mcp-shared": "0.1.0",
+    "zod": "^3.23.8"
+  },
+  "engines": { "node": ">=20.10.0" }
+}

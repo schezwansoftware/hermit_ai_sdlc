@@ -1,0 +1,58 @@
+# Hermit concepts
+
+## The one distinction that matters
+
+Hermit has exactly one orchestrator, and it is an **agent**.
+
+| | Orchestrator agent | Workflow server (`@hermit/mcp-workflow`) |
+|---|---|---|
+| What it is | `agents/orchestrator.md` — a markdown agent | A Node MCP server |
+| What it does | Decides who works next, dispatches, refuses to skip gates | Stores run state, artifacts, gate records; runs mechanical checks |
+| Has judgment | Yes. This is the whole point. | No. It cannot choose anything. |
+| Can be replaced by | A better prompt | A database |
+
+The workflow server exists for one reason: **markdown cannot remember.** A run spans days, three Copilot surfaces (VS Code, CLI, IntelliJ), and multiple people. Something has to hold "we are at stage 6, the architecture gate is open, here are the seven artifacts produced so far" in a way all of them see identically. That something is a file on disk (`.hermit/runs/<id>/run.json`), and the MCP server is just the doorway to it.
+
+If you deleted the MCP server, the orchestrator agent would still be the orchestrator — it would simply have amnesia between messages.
+
+## Why state lives in a server rather than in the agent's context
+
+Three practical reasons, in order of how much they hurt:
+
+1. **Copilot's surfaces don't share memory.** A run started in VS Code must be resumable from the CLI. Context windows are per-session; a file is not.
+2. **Gates need to be unfakeable.** If "approved" is a sentence in a transcript, a model can produce that sentence. If it's a signed record only the CLI can write, it can't. See `docs/03-gates.md`.
+3. **Context scoping needs a chokepoint.** "Each agent fetches only its own context" is enforceable only if something outside the agent decides what it receives. An agent asked to ignore an artifact it can already see is being asked to forget, which is not a thing models do reliably.
+
+## The cast
+
+| Agent | Owns stage(s) | Produces |
+|---|---|---|
+| `orchestrator` | `delivery` + supervises all | `release-notes` |
+| `onboarding` | `onboard` | `project-context`, `codebase-map`, `glossary` |
+| `analyst` | `requirements` | `requirements-spec`, `acceptance-criteria` |
+| `ux-designer` | `ux_lofi`, `ux_midfi`, `ux_hifi` | `ux-lofi`, `ux-midfi`, `ux-hifi`, `design-tokens` |
+| `architect` | `architecture` | `architecture-spec`, `adr`, `impact-analysis` |
+| `planner` | `planning` | `work-plan` |
+| `implementer` | `implementation` | `change-set` |
+| `reviewer` | `review` | `review-report` |
+| `qa` | `qa` | `test-plan`, `test-report` |
+
+Stages are the unit of state. Agents are the unit of capability. One agent can own several stages — `ux-designer` owns three, one per fidelity — and one stage can be re-run when a gate sends it back.
+
+## Handoff, concretely
+
+An agent never calls another agent. It calls three tools:
+
+```
+hermit_next_task        -> receives its playbook + only the context it is entitled to
+hermit_submit_artifact  -> writes one declared output
+hermit_request_handoff  -> asks to advance; exit criteria are checked first
+```
+
+`hermit_request_handoff` has three possible answers:
+
+- **blocked** — an exit criterion failed. The response names which one and why. The agent stays on its stage.
+- **awaiting_gate** — criteria passed, but this stage is human-gated. The run halts until a person runs `hermit gate approve <id>`.
+- **advanced** — criteria passed, no gate. `run.currentStage` moves on, and the next `hermit_next_task` returns a different agent's brief.
+
+The orchestrator agent reads that answer and routes accordingly. The server never routes; it only reports.
