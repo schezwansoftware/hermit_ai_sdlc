@@ -22,7 +22,8 @@
     "check:gates": "node scripts/gate-check.mjs",
     "demo": "node scripts/demo.mjs",
     "check:monorepo": "node scripts/monorepo-check.mjs",
-    "check:specialists": "node scripts/specialist-check.mjs"
+    "check:specialists": "node scripts/specialist-check.mjs",
+    "check:harness": "node scripts/harness-check.mjs"
   },
   "engines": {
     "node": ">=20.10.0"

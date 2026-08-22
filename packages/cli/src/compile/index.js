@@ -2,26 +2,39 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DEFAULT_PIPELINE, ensureDir, readJson, writeJson } from '@hermit/core';
-import { compileAgent, compileAgentsMd, compileCopilotInstructions, compileInstructions, compileProjectInstructions } from './copilot.js';
-import { compileCliMcp, compileIntellijSetup, compileVsCodeMcp } from './mcp.js';
+import { compileAgentsMd } from './copilot.js';
+import { HARNESSES, resolveHarnesses } from './harnesses.js';
 
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 /**
  * Produce every host-facing file from the canonical definitions.
  * Nothing here reads a previously generated file, so compilation is idempotent.
+ *
+ * `AGENTS.md` is emitted once regardless of harness: it is the portable
+ * baseline that Copilot CLI and Claude Code both read, and duplicating it per
+ * harness would mean two writers racing for one path.
  */
-export function compileAll({ registry, config = {}, pipeline = DEFAULT_PIPELINE, layoutInfo = { monorepo: false, projects: [] } }) {
-  const files = [];
-  for (const agent of registry.agents) files.push(compileAgent(agent, { registry, pipeline }));
-  files.push(compileCopilotInstructions({ registry, pipeline }));
-  files.push(compileAgentsMd({ registry, pipeline }));
-  files.push(...compileInstructions());
-  files.push(...compileProjectInstructions(layoutInfo));
-  files.push(compileVsCodeMcp(config));
-  files.push(compileCliMcp(config));
-  files.push(compileIntellijSetup(config));
+export function compileAll({
+  registry, config = {}, pipeline = DEFAULT_PIPELINE,
+  layoutInfo = { monorepo: false, projects: [] }, harnesses
+}) {
+  const ids = harnesses ?? resolveHarnesses(config);
+  const files = [compileAgentsMd({ registry, pipeline })];
+  for (const id of ids) {
+    files.push(...HARNESSES[id].files({ registry, config, pipeline, layoutInfo }));
+  }
   return files;
+}
+
+/**
+ * Files a previously-enabled harness wrote that the current selection no longer
+ * produces. Returned rather than deleted so the caller can report them: a file
+ * Hermit stops owning is not automatically a file the user wants gone.
+ */
+export function orphanedFiles(manifest, files) {
+  const current = new Set(files.map((f) => f.path));
+  return Object.keys(manifest?.files ?? {}).filter((p) => !current.has(p));
 }
 
 /**

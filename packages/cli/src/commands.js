@@ -10,7 +10,8 @@ import {
   resolveProjects, detectProjects, hasUiProject,
   nextTask, runStatus, decideGate, getGate, openGates, readArtifact, listArtifacts
 } from '@hermit/core';
-import { compileAll, installPacks, writeFiles } from './compile/index.js';
+import { compileAll, installPacks, writeFiles, orphanedFiles } from './compile/index.js';
+import { HARNESSES, resolveHarnesses } from './compile/harnesses.js';
 
 const c = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -68,9 +69,18 @@ export function cmdInit(opts) {
   }
   const layoutInfo = resolveProjects(p.root, config);
 
+  // The flag wins when given and is then remembered, so `hermit sync` never
+  // needs it again and a workspace cannot silently regress to the default.
+  const harnesses = resolveHarnesses(config, opts.harness);
+  if (JSON.stringify(config.harness ?? null) !== JSON.stringify(harnesses)) {
+    config.harness = harnesses;
+    writeJson(p.config, config);
+  }
+
   const packs = installPacks(PACK_ROOT, p.hermit, { force: opts.force });
   const registry = loadRegistry(p);
-  const files = compileAll({ registry, config, layoutInfo });
+  const files = compileAll({ registry, config, layoutInfo, harnesses });
+  const orphans = orphanedFiles(readJson(p.manifestFile, { files: {} }), files);
   const result = writeFiles(p.root, files, { force: opts.force, manifestFile: p.manifestFile });
 
   ensureDir(p.runsDir);
@@ -83,6 +93,7 @@ export function cmdInit(opts) {
   log(c.bold(isNew ? 'Hermit installed' : 'Hermit updated'), c.dim(`in ${p.root}`));
   log('');
   log(`  ${c.green('✓')} ${registry.agents.length} agents, ${registry.skills.length} skills, ${registry.knowledge.length} knowledge packs`);
+  log(`  ${c.green('✓')} harness: ${harnesses.map((h) => `${c.bold(HARNESSES[h].name)} ${c.dim(`(${HARNESSES[h].surfaces})`)}`).join(', ')}`);
   if (layoutInfo.monorepo) {
     const kinds = layoutInfo.projects.reduce((acc, x) => ({ ...acc, [x.kind]: (acc[x.kind] ?? 0) + 1 }), {});
     log(`  ${c.green('✓')} monorepo detected${layoutInfo.tool ? ` (${layoutInfo.tool})` : ''}: ${layoutInfo.projects.length} projects — ${Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(', ')}`);
@@ -97,11 +108,18 @@ export function cmdInit(opts) {
     for (const f of result.skipped) log(`      ${f}`);
     log(`      ${c.dim('Run `hermit sync --force` to overwrite, or move your edits into .hermit/ where they survive.')}`);
   }
+  if (orphans.length) {
+    log('');
+    log(`  ${c.yellow('!')} ${orphans.length} file(s) left behind by a harness that is no longer enabled:`);
+    for (const f of orphans) log(`      ${f}`);
+    log(`      ${c.dim('Hermit no longer maintains these. Delete them when you are sure nothing else reads them.')}`);
+  }
   log('');
   log(c.bold('Next:'));
   log(`  1. ${c.cyan('npx hermit doctor')}            check credentials and configuration`);
-  log(`  2. Reload VS Code so it picks up ${c.dim('.vscode/mcp.json')}`);
-  log(`  3. ${c.cyan('npx hermit start "your first task"')}`);
+  if (harnesses.includes('copilot')) log(`  2. Reload VS Code so it picks up ${c.dim('.vscode/mcp.json')}`);
+  if (harnesses.includes('claude')) log(`  ${harnesses.includes('copilot') ? '3' : '2'}. Restart Claude Code and approve the servers in ${c.dim('.mcp.json')}`);
+  log(`  ${harnesses.length > 1 ? '4' : '3'}. ${c.cyan('npx hermit start "your first task"')}`);
   log('');
   return result;
 }
@@ -393,6 +411,12 @@ export function cmdDoctor(opts) {
   const registry = loadRegistry(p);
   const layoutInfo = resolveProjects(p.root, config);
   log(`  ${c.green('✓')} ${registry.agents.length} agents, ${registry.skills.length} skills, ${registry.knowledge.length} knowledge packs`);
+  try {
+    const hs = resolveHarnesses(config);
+    log(`  ${c.green('✓')} harness: ${hs.map((h) => HARNESSES[h].name).join(', ')} ${c.dim(`(${hs.join(', ')})`)}`);
+  } catch (err) {
+    problems.push(err.message.split('\n')[0]);
+  }
   if (layoutInfo.monorepo) {
     const kinds = layoutInfo.projects.reduce((acc, x) => ({ ...acc, [x.kind]: (acc[x.kind] ?? 0) + 1 }), {});
     log(`  ${c.green('✓')} monorepo detected${layoutInfo.tool ? ` (${layoutInfo.tool})` : ''}: ${layoutInfo.projects.length} projects — ${Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(', ')}`);

@@ -5,11 +5,12 @@ import {
 } from '../src/commands.js';
 
 const HELP = `
-hermit — agentic SDLC pipeline for GitHub Copilot workspaces
+hermit — agentic SDLC pipeline for GitHub Copilot and Claude Code workspaces
 
   Setup
     hermit init [--force]              install agents and host configs into this workspace
-    hermit sync [--force]              recompile .hermit/ into Copilot formats
+        --harness <a,b>                copilot (default) · claude — remembered after the first run
+    hermit sync [--force]              recompile .hermit/ into your harness's formats
     hermit doctor                      check configuration, credentials and pipeline integrity
     hermit projects                    list the projects in this repo and how they were classified
 

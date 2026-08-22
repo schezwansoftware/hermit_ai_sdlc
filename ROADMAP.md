@@ -99,6 +99,24 @@ Enhance `hermit init` to intelligently detect the tech stack and enroll required
 - [x] UI Developer Agent
 - [x] Backend Developer Agent
 - [ ] Framework Detection & Auto-Enrollment
+- [x] Claude Code harness
+
+---
+
+### 4. Claude Code harness — **shipped**
+
+`hermit init --harness claude` compiles the same canonical packs into what Claude Code reads, alongside or instead of the Copilot output.
+
+**As built:**
+- Harness registry in `packages/cli/src/compile/harnesses.js`; `compileAll` dispatches, `AGENTS.md` stays shared
+- `--harness copilot,claude` enables both; the choice persists in `.hermit/config.json` so `sync` never needs the flag
+- Dropping a harness reports the files Hermit stops maintaining rather than deleting them
+- Claude output: `CLAUDE.md`, `.claude/agents/`, `.claude/skills/` (packs as real loadable skills, not inlined), `.mcp.json`, `.claude/settings.json`
+- The main session is the orchestrator — Claude Code has no `mode: primary` equivalent, and a subagent dispatching subagents fights the model
+- **Enforcement Copilot cannot express:** write-scope denials, and a `PreToolUse` hook refusing `hermit gate approve|reject|changes` from Bash. That closes the last route by which an agent could decide its own gate
+- Verified by `npm run check:harness` — eight properties, including that a harness changes format but never scope
+
+---
 
 ## What remains
 

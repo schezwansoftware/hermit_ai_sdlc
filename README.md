@@ -1,9 +1,11 @@
 <h1>Hermit</h1>
 
-**An agentic SDLC pipeline for GitHub Copilot.** Twelve role agents carry work from a ticket to a merged pull request. Each sees only the context its role declares. A human signs off at the seven points where being wrong is expensive — and no agent can forge that signature.
+**An agentic SDLC pipeline for GitHub Copilot and Claude Code.** Twelve role agents carry work from a ticket to a merged pull request. Each sees only the context its role declares. A human signs off at the seven points where being wrong is expensive — and no agent can forge that signature.
 
 ```bash
-npm i @hermit/cli
+npm i @hermit/cli                          # GitHub Copilot
+npx hermit init --harness claude           # Claude Code
+npx hermit init --harness copilot,claude   # both
 ```
 
 That is the whole setup. → [Install guide](INSTALL.md) · [Concepts](docs/01-concepts.md)
@@ -189,6 +191,41 @@ Backed by 24 skill packs and 2 knowledge packs. All markdown, all in `.hermit/`,
 
 ---
 
+## Two harnesses, one pipeline definition
+
+Everything in `.hermit/` is host-agnostic. A **harness** compiles it into whatever files a given host actually reads:
+
+| | GitHub Copilot | Claude Code |
+|---|---|---|
+| Always-on instructions | `.github/copilot-instructions.md` | `CLAUDE.md` |
+| Portable baseline | `AGENTS.md` | `AGENTS.md` |
+| Agent definitions | `.github/agents/*.agent.md` | `.claude/agents/*.md` |
+| Skills & knowledge | inlined into each agent | `.claude/skills/*/SKILL.md` |
+| MCP config | `.vscode/mcp.json` · `.copilot/mcp-config.json` | `.mcp.json` |
+| Write scope | described | **enforced** — `.claude/settings.json` |
+| Gate approval from a shell | described | **blocked** — PreToolUse hook |
+
+Enable both and a team split across editors shares one pipeline; the outputs do not overlap. The choice is remembered in `.hermit/config.json`, so `hermit sync` never needs the flag again, and dropping a harness reports the files Hermit has stopped maintaining rather than deleting them behind you.
+
+**A harness changes the format, never the scope.** An agent entitled to three MCP tools under Copilot is entitled to exactly those three under Claude Code, and a read-only role gets no `Edit`, `Write` or `Bash` on either. `npm run check:harness` asserts that in both directions.
+
+### What Claude Code adds
+
+Two things Copilot's format cannot express:
+
+**Skills are loaded, not inlined.** Copilot has no skills mechanism, so every pack body is concatenated into every agent file that references it. Claude Code loads them on demand — smaller agent files, and one pack edited once with nothing to drift.
+
+**The last gate hole closes.** Hermit's claim is that gate approval is unreachable from the agent side: no MCP tool exposes it, and `decideGate` refuses any source but the CLI. Bash was the remaining hole — an agent can type the command itself. A generated `PreToolUse` hook refuses it:
+
+```
+$ hermit gate approve gate_architecture_7f3c     # attempted by an agent
+Blocked by Hermit: only a human may decide a gate.
+```
+
+A person running it in their own terminal is unaffected; the hook only sees tool calls.
+
+---
+
 ## The three Copilot surfaces
 
 | Loads | VS Code | Copilot CLI | IntelliJ |
@@ -205,7 +242,7 @@ Because IntelliJ loads no agent files, every playbook is **also** served over MC
 ## Commands
 
 ```bash
-hermit init                        # install into this workspace
+hermit init [--harness a,b]        # install into this workspace (copilot · claude)
 hermit doctor                      # config, credentials, pipeline integrity
 hermit projects                    # what this repo contains and how it was classified
 
@@ -228,6 +265,7 @@ hermit sync                        # recompile after editing .hermit/
 npm test                            # full pipeline through the state machine
 npm run check:monorepo              # scoping, stage skipping, conditional criteria
 npm run check:specialists           # stack-based routing and the split design
+npm run check:harness               # both harnesses compile; scope survives translation
 npm run check:mcp   -- <workspace>  # all six servers handshake over stdio
 npm run check:gates -- <workspace>  # gate enforcement across the MCP boundary
 ```
