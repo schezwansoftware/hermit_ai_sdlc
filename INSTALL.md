@@ -1,9 +1,12 @@
 # Installing Hermit
 
-Hermit installs into an existing repository. It adds agent definitions, Copilot configuration and MCP server wiring; it does not restructure your project.
+Hermit installs into an existing repository. It adds agent definitions, host configuration and MCP server wiring; it does not restructure your project.
+
+It targets **GitHub Copilot** by default and **Claude Code** with `--harness claude`. Both can be enabled at once.
 
 - [Requirements](#requirements)
 - [Install](#install)
+- [Choosing a harness](#choosing-a-harness)
 - [Configure credentials](#configure-credentials)
 - [Wire up each Copilot surface](#wire-up-each-copilot-surface)
 - [Monorepos](#monorepos)
@@ -21,8 +24,8 @@ Hermit installs into an existing repository. It adds agent definitions, Copilot 
 |---|---|
 | Node | 20.10 or later (`node -v`) |
 | Git | Repository initialised; a remote if you want pull requests opened |
-| Copilot | An active GitHub Copilot subscription |
-| Host | VS Code, Copilot CLI, or a JetBrains IDE |
+| Host | VS Code, Copilot CLI, a JetBrains IDE, or Claude Code |
+| Copilot | An active subscription — only if you use the Copilot harness |
 
 Hermit is plain ESM with no build step. Nothing is compiled at install time.
 
@@ -49,6 +52,15 @@ npx hermit init
 
 Both do the same work and are safe to re-run.
 
+For Claude Code instead of, or alongside, Copilot:
+
+```bash
+npx hermit init --harness claude
+npx hermit init --harness copilot,claude
+```
+
+The choice is written to `.hermit/config.json`, so `npx hermit sync` never needs the flag again.
+
 ### What lands in your repository
 
 ```
@@ -56,18 +68,27 @@ Both do the same work and are safe to re-run.
   agents/          12 agent definitions
   skills/          24 skill packs
   knowledge/       2 knowledge packs (edit engineering-standards first)
-  config.json      servers, SCM provider, write permissions, projects
+  config.json      harness, servers, SCM provider, write permissions, projects
+  hooks/           generated guards (Claude Code harness)
   runs/            run state and artifacts (git-ignored by default)
 
+AGENTS.md                         portable baseline — read by both harnesses
+
+# harness: copilot
 .github/
   copilot-instructions.md         always-on, all three surfaces
   agents/*.agent.md               compiled — do not edit by hand
   instructions/*.instructions.md  path-scoped rules
-
-AGENTS.md                         portable baseline for Copilot CLI
 .vscode/mcp.json                  MCP config for VS Code
 .copilot/mcp-config.json          MCP config for Copilot CLI
 docs/hermit-intellij-setup.md     generated IntelliJ instructions
+
+# harness: claude
+CLAUDE.md                         always-on, and the orchestrator's playbook
+.claude/agents/*.md               compiled subagents — do not edit by hand
+.claude/skills/*/SKILL.md         packs, loaded on demand
+.claude/settings.json             write-scope denials and the gate guard
+.mcp.json                         MCP config for Claude Code
 ```
 
 Everything under `.github/`, `AGENTS.md` and the MCP configs is **generated from `.hermit/`**. Edit the canonical files and run `npx hermit sync`.
@@ -76,9 +97,55 @@ Hermit records a hash of every file it writes. If you edit a generated file by h
 
 ### What to commit
 
-Commit `.hermit/agents`, `.hermit/skills`, `.hermit/knowledge`, `.hermit/config.json`, and everything generated under `.github/`, `AGENTS.md`, `.vscode/mcp.json`, `.copilot/mcp-config.json` — your team should share one pipeline definition.
+Commit `.hermit/agents`, `.hermit/skills`, `.hermit/knowledge`, `.hermit/config.json`, `.hermit/hooks`, and everything your harness generates — your team should share one pipeline definition. For Copilot that is `.github/`, `.vscode/mcp.json` and `.copilot/mcp-config.json`; for Claude Code, `CLAUDE.md`, `.claude/` and `.mcp.json`. `AGENTS.md` either way.
 
 `.hermit/runs/` is git-ignored by default. Commit it only if you want run artifacts in version control; they contain whatever your agents wrote, so check for anything sensitive first.
+
+---
+
+## Choosing a harness
+
+A **harness** is a host that reads agent definitions. Everything in `.hermit/` is host-agnostic; the harness decides what gets compiled out of it.
+
+| | `copilot` (default) | `claude` |
+|---|---|---|
+| Always-on instructions | `.github/copilot-instructions.md` | `CLAUDE.md` |
+| Portable baseline | `AGENTS.md` | `AGENTS.md` |
+| Agent definitions | `.github/agents/*.agent.md` | `.claude/agents/*.md` |
+| Skills & knowledge | inlined into each agent file | `.claude/skills/*/SKILL.md` |
+| MCP config | `.vscode/mcp.json`, `.copilot/mcp-config.json` | `.mcp.json` |
+| Repo layout (monorepo) | `.github/instructions/project-*.md` | `.claude/skills/hermit-repository-layout/` |
+| Write scope | described in the brief | **enforced** by `.claude/settings.json` |
+| Gate approval from a shell | described | **blocked** by a `PreToolUse` hook |
+
+Enabling both is supported and costs nothing — the output paths do not overlap, so a team split across editors shares one pipeline definition.
+
+**A harness changes the format, not the scope.** An agent entitled to three MCP tools under one is entitled to exactly those three under the other, and a read-only role gets no editing tools on either.
+
+### Switching harness
+
+```bash
+npx hermit init --harness claude    # switch
+npx hermit doctor                   # confirms which is active
+```
+
+Files the previous harness wrote are **reported, not deleted** — Hermit stops maintaining them and tells you which they are. Delete them once you are sure nothing else reads them:
+
+```bash
+rm -rf .github/agents .github/instructions .copilot .vscode/mcp.json
+```
+
+### Claude Code specifics
+
+**The main session is the orchestrator.** Copilot gives the orchestrator its own `mode: primary` agent file; Claude Code has no equivalent, and a subagent dispatching subagents fights the model. So the orchestrator's playbook lives in `CLAUDE.md`, where the main session reads it, and the twelve role agents are subagents it dispatches through the Task tool.
+
+**Skills are loaded, not inlined.** Each pack becomes a real skill under `.claude/skills/hermit-<id>/`, read on demand rather than copied into every agent that references it.
+
+**Enforcement.** `.claude/settings.json` denies writes to `.hermit/runs/` (the audit trail) and to the generated agent files, and registers a hook that refuses `hermit gate approve|reject|changes` from Bash. That last one closes the only remaining route by which an agent could decide its own gate. Running it yourself in a terminal is unaffected — the hook only sees tool calls.
+
+Hermit owns `.claude/settings.json` outright rather than merging into it, because a partial merge would keep whichever hooks block was already on disk and silently drop the gate guard. If you edit it by hand, the next sync skips it and says so.
+
+**Restart Claude Code after install** so it picks up `.mcp.json`, and approve the servers when prompted.
 
 ---
 
@@ -175,7 +242,11 @@ Writes to systems the whole company can see are **off by default**:
 
 ## Wire up each Copilot surface
 
-The three surfaces do not read the same files. Hermit generates for all three from one source, but each needs a different activation step.
+The hosts do not read the same files. Hermit generates for whichever harnesses you enabled from one source, but each needs a different activation step.
+
+### Claude Code
+
+Restart it so it picks up `.mcp.json`, approve the servers when prompted, then just describe the work — the main session is the orchestrator and dispatches the role agents itself. `CLAUDE.md` is loaded automatically.
 
 ### VS Code
 
@@ -346,6 +417,10 @@ Nothing an agent can do approves a gate — there is no such tool on the MCP sur
 
 **MCP servers do not appear in VS Code.** Reload the window. Check `.vscode/mcp.json` exists and that `node_modules/@hermit/mcp-workflow/src/index.js` is present.
 
+**MCP servers do not appear in Claude Code.** Restart it — `.mcp.json` is read at startup — and approve the servers when prompted. Check `.mcp.json` exists and that you ran `init` with `--harness claude`; `hermit doctor` names the active harness.
+
+**Claude Code blocked a gate command.** Working as designed: agents cannot decide gates. Run it yourself in a terminal.
+
 **`No active Hermit run`.** Start one with `hermit start`, or `hermit runs` to see existing ones — the active run is per-workspace.
 
 **A server says a variable is missing.** Set it and restart the MCP server; hosts read the environment at spawn time, so exporting into an already-running session is not enough.
@@ -368,9 +443,15 @@ Nothing an agent can do approves a gate — there is no such tool on the MCP sur
 
 ```bash
 npm rm @hermit/cli
-rm -rf .hermit .github/agents .github/instructions .copilot AGENTS.md
+rm -rf .hermit AGENTS.md
+
+# Copilot harness
+rm -rf .github/agents .github/instructions .copilot
+
+# Claude Code harness
+rm -rf .claude/agents .claude/skills .claude/settings.json CLAUDE.md .mcp.json
 ```
 
-Also remove the `servers` block from `.vscode/mcp.json` (Hermit merges into that file rather than owning it, so other servers you configured are preserved).
+For `.vscode/mcp.json`, remove the `servers` block rather than the file — Hermit merges into it rather than owning it, so other servers you configured are preserved. The same applies to `mcpServers` in `.mcp.json` if you added your own.
 
 Your source code is untouched — Hermit only ever writes to the paths listed above, plus whatever the implementer and documenter agents changed during a run, which live in your normal git history.
