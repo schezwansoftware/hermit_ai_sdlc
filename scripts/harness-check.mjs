@@ -44,6 +44,7 @@ const copilot = build(['copilot']);
 const claude = build(['claude']);
 const both = build(['copilot', 'claude']);
 const paths = (files) => files.map((f) => f.path);
+const body = (files, p) => files.find((f) => f.path === p).content;
 
 for (const [name, files, expected, forbidden] of [
   ['copilot', copilot, ['.github/copilot-instructions.md', '.vscode/mcp.json', '.copilot/mcp-config.json'], ['CLAUDE.md', '.mcp.json']],
@@ -64,23 +65,33 @@ console.log('  ✓ AGENTS.md emitted once; enabling both collides on nothing');
 
 // --- One agent file per agent, on both harnesses ----------------------------
 
-for (const [name, files, dir, ext] of [
-  ['copilot', copilot, '.github/agents/', '.agent.md'],
-  ['claude', claude, '.claude/agents/', '.md']
+const roleAgents = registry.agents.filter((a) => a.id !== 'orchestrator');
+
+for (const [name, files, dir, ext, expected] of [
+  ['copilot', copilot, '.github/agents/', '.agent.md', registry.agents],
+  // Claude Code gets no orchestrator subagent — CLAUDE.md makes the main session
+  // the orchestrator, and shipping both would contradict that.
+  ['claude', claude, '.claude/agents/', '.md', roleAgents]
 ]) {
   const agentFiles = paths(files).filter((p) => p.startsWith(dir));
-  assert.equal(agentFiles.length, registry.agents.length, `${name}: one file per agent`);
-  for (const a of registry.agents) {
+  assert.equal(agentFiles.length, expected.length, `${name}: one file per agent`);
+  for (const a of expected) {
     assert.ok(agentFiles.includes(`${dir}hermit-${a.id}${ext}`), `${name}: missing agent file for ${a.id}`);
   }
 }
-console.log(`  ✓ ${registry.agents.length} agent files on each harness`);
+assert.ok(
+  !paths(claude).includes('.claude/agents/hermit-orchestrator.md'),
+  'claude must not ship an orchestrator subagent alongside CLAUDE.md saying it has none'
+);
+assert.ok(
+  body(claude, 'CLAUDE.md').includes(registry.agentsById.orchestrator.playbook.slice(0, 120)),
+  'the orchestrator playbook must be in CLAUDE.md, since no subagent carries it'
+);
+console.log(`  ✓ ${registry.agents.length} agent files on copilot, ${roleAgents.length} on claude (orchestrator is the main session)`);
 
 // --- Scope is identical across harnesses ------------------------------------
 
-const body = (files, p) => files.find((f) => f.path === p).content;
-
-for (const agent of registry.agents) {
+for (const agent of roleAgents) {
   const declared = effectiveMcpTools(agent.context?.reads?.mcp ?? []);
   const text = body(claude, `.claude/agents/hermit-${agent.id}.md`);
   const toolsLine = /^tools:\s*(.+)$/m.exec(text)[1];
@@ -159,6 +170,35 @@ for (const [command, blocked] of [
   if (blocked) assert.match(r.stderr, /only a human may decide a gate/);
 }
 console.log('  ✓ gate guard blocks approve/reject/changes from Bash, allows read-only gate commands');
+
+// --- Disabling a server removes it; a user's own server survives ------------
+
+const { writeFiles } = await import('../packages/cli/src/compile/index.js');
+const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hermit-merge-'));
+const manifestFile = path.join(wsRoot, 'manifest.json');
+const mcpPath = path.join(wsRoot, '.vscode/mcp.json');
+
+const withServers = (servers) =>
+  compileAll({ registry, config: { servers }, layoutInfo, harnesses: ['copilot'] })
+    .filter((f) => f.path === '.vscode/mcp.json');
+
+writeFiles(wsRoot, withServers(['hermit', 'jira', 'scm']), { manifestFile });
+let written = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
+assert.deepEqual(Object.keys(written.servers).sort(), ['hermit', 'jira', 'scm']);
+
+// A server the user configured themselves is none of Hermit's business.
+written.servers.myOwnServer = { type: 'stdio', command: 'node', args: ['mine.js'] };
+fs.writeFileSync(mcpPath, JSON.stringify(written, null, 2) + '\n');
+
+writeFiles(wsRoot, withServers(['hermit']), { manifestFile });
+const after = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
+assert.ok('myOwnServer' in after.servers, "a user's own server must survive a sync");
+assert.ok('hermit' in after.servers);
+assert.ok(!('jira' in after.servers), 'a disabled Hermit server must be removed, not merely left behind');
+assert.ok(!('scm' in after.servers));
+console.log('  ✓ disabling a server prunes it from the MCP config; a user\'s own server survives');
+
+fs.rmSync(wsRoot, { recursive: true, force: true });
 
 // --- Switching harnesses reports what it stops owning -----------------------
 

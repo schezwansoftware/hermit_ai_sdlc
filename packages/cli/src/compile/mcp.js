@@ -1,5 +1,8 @@
 import { SERVERS } from '@hermit/core';
 
+/** Every server id Hermit may write, enabled or not — see mergeJsonKey. */
+const OWNED = Object.keys(SERVERS);
+
 const NM = 'node_modules';
 
 /**
@@ -42,13 +45,13 @@ export function enabledServers(config) {
 export function compileVsCodeMcp(config) {
   const servers = {};
   for (const def of enabledServers(config)) servers[def.id] = serverEntry(def, { style: 'vscode' });
-  return { path: '.vscode/mcp.json', content: JSON.stringify({ servers }, null, 2) + '\n', merge: 'servers' };
+  return { path: '.vscode/mcp.json', content: JSON.stringify({ servers }, null, 2) + '\n', merge: 'servers', owns: OWNED };
 }
 
 export function compileCliMcp(config) {
   const mcpServers = {};
   for (const def of enabledServers(config)) mcpServers[def.id] = serverEntry(def, { style: 'cli' });
-  return { path: '.copilot/mcp-config.json', content: JSON.stringify({ mcpServers }, null, 2) + '\n', merge: 'mcpServers' };
+  return { path: '.copilot/mcp-config.json', content: JSON.stringify({ mcpServers }, null, 2) + '\n', merge: 'mcpServers', owns: OWNED };
 }
 
 export function compileIntellijSetup(config) {

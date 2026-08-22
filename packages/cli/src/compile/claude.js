@@ -243,7 +243,7 @@ export function compileMcpJson(config) {
       ...(Object.keys(env).length ? { env } : {})
     };
   }
-  return { path: '.mcp.json', content: JSON.stringify({ mcpServers }, null, 2) + '\n', merge: 'mcpServers' };
+  return { path: '.mcp.json', content: JSON.stringify({ mcpServers }, null, 2) + '\n', merge: 'mcpServers', owns: Object.keys(SERVERS) };
 }
 
 /**
@@ -318,7 +318,14 @@ process.stdin.on('end', () => {
 /** Everything the Claude Code harness generates. */
 export function claudeFiles({ registry, config, pipeline, layoutInfo }) {
   return [
-    ...registry.agents.map((agent) => compileAgent(agent, { registry, pipeline })),
+    // No orchestrator subagent: CLAUDE.md makes the main session the orchestrator,
+    // and generating one as well would contradict that — a subagent that cannot
+    // reliably dispatch subagents, next to instructions saying you are the one
+    // who dispatches. Its playbook is in CLAUDE.md, and hermit_get_agent still
+    // serves it on demand.
+    ...registry.agents
+      .filter((agent) => agent.id !== 'orchestrator')
+      .map((agent) => compileAgent(agent, { registry, pipeline })),
     ...compileSkills({ registry }),
     compileClaudeMd({ registry, pipeline }),
     compileMcpJson(config),
