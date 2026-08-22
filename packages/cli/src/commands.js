@@ -144,10 +144,11 @@ export function cmdStart(intent, opts) {
     jiraKey: opts.jira ?? null,
     flags,
     projects,
-    selectedProjects
+    selectedProjects,
+    registry: loadRegistry(p)
   });
   const status = runStatus({ paths: p, run });
-  const stage = DEFAULT_PIPELINE.stages.find((s) => s.id === status.currentStage);
+  const stage = status.stages.find((s) => s.id === status.currentStage);
 
   log('');
   log(c.bold('Run started'), c.dim(run.id));
@@ -189,10 +190,13 @@ export function cmdStatus(opts) {
   log(c.dim(`  ${s.intent}`));
   if (s.jiraKey) log(c.dim(`  tracker: ${s.jiraKey}`));
   log('');
+  // Sized to the longest name present: a specialist agent id is longer than any
+  // of the pipeline defaults, and a fixed width ragged the gate column.
+  const agentWidth = Math.max(...s.stages.map((st) => st.agent.length));
   for (const [i, st] of s.stages.entries()) {
     const gate = st.gate === 'hitl' ? c.dim(' [human gate]') : '';
     const attempts = st.attempts > 1 ? c.dim(` ×${st.attempts}`) : '';
-    log(`  ${mark[st.status] ?? '?'} ${String(i + 1).padStart(2)}. ${st.id.padEnd(15)} ${c.dim(st.agent.padEnd(13))}${gate}${attempts}`);
+    log(`  ${mark[st.status] ?? '?'} ${String(i + 1).padStart(2)}. ${st.id.padEnd(15)} ${c.dim(st.agent.padEnd(agentWidth))}${gate}${attempts}`);
   }
   log('');
   log(`  Status: ${s.status === 'completed' ? c.green(s.status) : s.status === 'blocked' ? c.red(s.status) : s.status}   Artifacts: ${s.artifacts.length}`);
@@ -287,7 +291,7 @@ export function cmdGate(action, gateId, opts) {
   if (decision === 'approve') {
     log(`  ${c.green('✓ Approved')} ${gate.stageTitle} ${c.dim(`by ${by}`)}`);
     if (after.currentStage) {
-      const stage = DEFAULT_PIPELINE.stages.find((s) => s.id === after.currentStage);
+      const stage = after.stages.find((s) => s.id === after.currentStage);
       log(`  Next: ${c.cyan(stage.id)} — ${stage.title}, owned by ${c.bold(stage.agent)}`);
     } else {
       log(`  ${c.green('Run complete.')}`);
@@ -385,6 +389,7 @@ export function cmdDoctor(opts) {
 
   const config = readJson(p.config, {});
   const registry = loadRegistry(p);
+  const layoutInfo = resolveProjects(p.root, config);
   log(`  ${c.green('✓')} ${registry.agents.length} agents, ${registry.skills.length} skills, ${registry.knowledge.length} knowledge packs`);
   if (layoutInfo.monorepo) {
     const kinds = layoutInfo.projects.reduce((acc, x) => ({ ...acc, [x.kind]: (acc[x.kind] ?? 0) + 1 }), {});
@@ -411,6 +416,29 @@ export function cmdDoctor(opts) {
     }
   }
   if (!problems.length) log(`  ${c.green('✓')} pipeline graph consistent (${DEFAULT_PIPELINE.stages.length} stages)`);
+
+  // Specialists may read less than the stage offers — narrowing is the point of
+  // role scoping — but one that cannot write the stage's outputs fails only at
+  // handoff, hours into a run, which is exactly what doctor exists to prevent.
+  const specialists = registry.agents.filter((a) => a.specializes);
+  for (const agent of specialists) {
+    const stage = DEFAULT_PIPELINE.stages.find((s) => s.id === agent.specializes.stage);
+    if (!stage) {
+      problems.push(`agent "${agent.id}" specialises in unknown stage "${agent.specializes.stage}"`);
+      continue;
+    }
+    if (!agent.stages.includes(stage.id)) {
+      problems.push(`specialist "${agent.id}" must also list "${stage.id}" under stages`);
+    }
+    for (const out of stage.outputs ?? []) {
+      if (!(agent.context?.writes?.artifacts ?? []).includes(out)) {
+        problems.push(`specialist "${agent.id}" lacks write scope for stage output "${out}"`);
+      }
+    }
+  }
+  if (specialists.length) {
+    log(`  ${c.green('✓')} ${specialists.length} specialist agent(s): ${specialists.map((a) => `${a.id} → ${a.specializes.stage}`).join(', ')}`);
+  }
 
   // Unknown MCP tools in agent declarations.
   for (const agent of registry.agents) {

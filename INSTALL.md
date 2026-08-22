@@ -7,6 +7,7 @@ Hermit installs into an existing repository. It adds agent definitions, Copilot 
 - [Configure credentials](#configure-credentials)
 - [Wire up each Copilot surface](#wire-up-each-copilot-surface)
 - [Monorepos](#monorepos)
+- [Specialist agents](#specialist-agents)
 - [Figma authoring](#figma-authoring-optional)
 - [First run](#first-run)
 - [Troubleshooting](#troubleshooting)
@@ -52,8 +53,8 @@ Both do the same work and are safe to re-run.
 
 ```
 .hermit/                          ← yours to edit; survives sync and upgrades
-  agents/          10 agent definitions
-  skills/          19 skill packs
+  agents/          11 agent definitions
+  skills/          22 skill packs
   knowledge/       2 knowledge packs (edit engineering-standards first)
   config.json      servers, SCM provider, write permissions, projects
   runs/            run state and artifacts (git-ignored by default)
@@ -216,6 +217,8 @@ Hermit detects the layout at install and prints what it found:
 
 Detection reads npm/yarn workspaces, pnpm, Lerna, Nx, Turborepo, Go workspaces, Cargo, Gradle and Maven — **unioned** with conventional directories, so `infra/` and `docs/` are picked up even when they sit outside the package-manager globs.
 
+A conventionally-named directory counts only if it carries evidence that something is built there — a manifest, a build file, a Dockerfile or a Terraform file. A `docs/` folder holding nothing but markdown is documentation, not a project.
+
 ```bash
 npx hermit projects
 ```
@@ -261,6 +264,35 @@ Omit `--project` to scope the run to every project.
 ### Per-project instructions
 
 Hermit generates `.github/instructions/project-<id>.instructions.md` with `applyTo: '<path>/**'`, so VS Code loads a project's context automatically when you open a file in it — without inflating the always-on instructions every surface pays for.
+
+---
+
+## Specialist agents
+
+Most stages have one agent. The **implementation** stage has two, and Hermit picks between them from what the repository is written in:
+
+| Scope contains | Implements |
+|---|---|
+| Python, Go or Java/Spring Boot server-side code | `backend-developer` |
+| anything else | `implementer` |
+
+There is nothing to configure. The stacks come from the same project scan `hermit projects` prints, and a flat single-service repository is classified from its root. If no specialist matches, the pipeline's own agent runs — a specialist can narrow a stage, never leave it unstaffed.
+
+```bash
+npx hermit status     # names the agent that will run each stage
+npx hermit doctor     # lists the specialists and checks their scopes
+```
+
+To see which agent handled a stage after the fact, `npx hermit journal` records a `stage.specialised` entry naming the specialist, the agent it replaced, and the stacks that decided it.
+
+### What this asks of the architect
+
+Because the two sides of a change can be built by different agents, `architecture-spec` splits to match:
+
+- `## Backend Design` — required when the work has a server side
+- `## Frontend Design` — required when the work has an interface
+
+Both are checked mechanically at the architecture gate, and neither is demanded of a run it does not apply to: a backend-only run is never asked for a frontend design.
 
 ---
 
@@ -316,6 +348,8 @@ Nothing an agent can do approves a gate — there is no such tool on the MCP sur
 **Doctor reports generated files were edited.** You changed a compiled file by hand. Move the change into `.hermit/` where it survives, or `hermit sync --force` to discard it.
 
 **A project was classified wrong.** Declare it explicitly under `projects` in `.hermit/config.json`, then `hermit sync`.
+
+**The wrong agent took the implementation stage.** Routing follows the `kind` and `stack` of the projects in scope — check `hermit projects` first, since a misclassified project is the usual cause. Declaring the project correctly in `.hermit/config.json` fixes both. Scope is frozen when the run starts, so correct it and start a new run.
 
 **Figma bridge stays disconnected.** The plugin must be running in an open Figma file. Check the port matches `figma.bridgePort`. This is not an error condition — the pipeline continues with a written spec.
 

@@ -18,6 +18,15 @@ export const PROJECT_KINDS = /** @type {const} */ ([
 /** Kinds that justify running the three UX stages. */
 export const UI_KINDS = new Set(['frontend', 'mobile']);
 
+/** Kinds whose work is server-side whatever the stack detector found. */
+export const BACKEND_KINDS = new Set(['backend', 'batch']);
+
+/** Kinds that are never server-side, whatever the stack detector found. */
+const NON_BACKEND_KINDS = new Set(['frontend', 'mobile', 'docs', 'infra']);
+
+/** Stacks that only appear on the server side of a system. */
+const SERVER_STACKS = new Set(['python', 'go', 'jvm', 'dotnet', 'ruby', 'rust']);
+
 const IGNORE_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', 'out', 'target', 'vendor',
   '.next', '.nuxt', '.venv', 'venv', '__pycache__', 'coverage', '.turbo', '.gradle'
@@ -105,6 +114,28 @@ const CONVENTIONAL_LEAVES = [
   'db', 'database', 'migrations', 'e2e'
 ];
 
+/**
+ * A manifest, a build file or a deployment descriptor — something that says
+ * "a thing is built here".
+ *
+ * Required of conventionally-named directories, because the name alone is not
+ * evidence: Hermit writes `docs/hermit-intellij-setup.md` into the workspace
+ * itself, and without this a repository would come back reporting Hermit's own
+ * output as its only project.
+ */
+const PROJECT_EVIDENCE = [
+  /^package\.json$/, /^go\.mod$/, /^pom\.xml$/, /^build\.gradle(\.kts)?$/,
+  /^Cargo\.toml$/, /^(requirements\.txt|pyproject\.toml|setup\.py)$/, /^Gemfile$/,
+  /\.csproj$/, /^Dockerfile$/, /\.tf$/, /^(Chart\.yaml|Pulumi\.yaml|cdk\.json|skaffold\.yaml)$/,
+  /^index\.html$/, /^pubspec\.yaml$/
+];
+
+function hasProjectEvidence(root, rel) {
+  const dir = path.join(root, rel);
+  if (!fs.existsSync(dir)) return false;
+  return fs.readdirSync(dir).some((f) => PROJECT_EVIDENCE.some((re) => re.test(f)));
+}
+
 function conventionalDirs(root) {
   const found = [];
   for (const parent of CONVENTIONAL_PARENTS) {
@@ -118,7 +149,7 @@ function conventionalDirs(root) {
   for (const leaf of CONVENTIONAL_LEAVES) {
     if (exists(root, leaf) && fs.statSync(path.join(root, leaf)).isDirectory()) found.push(leaf);
   }
-  return [...new Set(found)];
+  return [...new Set(found)].filter((d) => hasProjectEvidence(root, d));
 }
 
 /** Infer what a project *is* from what is inside it. Evidence, not the folder name alone. */
@@ -249,4 +280,37 @@ export function scopePathsToProjects(paths = [], projects = [], selectedIds = []
 export function hasUiProject(projects, selectedIds = []) {
   const selected = selectedIds.length ? projects.filter((p) => selectedIds.includes(p.id)) : projects;
   return selected.some((p) => p.ui);
+}
+
+/**
+ * Is this project's implementation work server-side?
+ *
+ * `node` is not a server stack on its own — the same runtime builds both sides —
+ * so a Node project qualifies on its kind, while a Python or Go one qualifies on
+ * its stack even when the directory name told the classifier nothing.
+ */
+export function isBackendProject(project) {
+  if (!project) return false;
+  if (NON_BACKEND_KINDS.has(project.kind)) return false;
+  if (BACKEND_KINDS.has(project.kind)) return true;
+  return (project.stack ?? []).some((s) => SERVER_STACKS.has(s));
+}
+
+/**
+ * What a run actually touches, reduced to the two facts that route work:
+ * the stack and the kind of each unit in scope.
+ *
+ * A flat single-service repository declares no sub-projects, so scoping it from
+ * `projects` alone would report an empty scope and every specialist would decline.
+ * Classifying the repository root covers that case — it is the same evidence
+ * `classifyProject` reads, applied one level up.
+ */
+export function techScope(root, projects = [], selectedIds = []) {
+  const selected = selectedIds.length ? projects.filter((p) => selectedIds.includes(p.id)) : projects;
+  const units = selected.length ? selected : [classifyProject(root, '.')];
+  return {
+    units: units.map((p) => ({ kind: p.kind, stack: p.stack ?? ['unknown'] })),
+    stacks: [...new Set(units.flatMap((p) => p.stack ?? []))].sort(),
+    backend: units.some(isBackendProject)
+  };
 }

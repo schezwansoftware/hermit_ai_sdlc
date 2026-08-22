@@ -19,12 +19,14 @@ Shared reference for every agent. You own one box; this shows you the rest so yo
 | 5 | `ux_hifi` | ux-designer | **human** | `ux-midfi`, `requirements-spec` | `ux-hifi`, `design-tokens` |
 | 6 | `architecture` | architect | **human** | `requirements-spec`, `acceptance-criteria`, `codebase-map`, `ux-hifi` | `architecture-spec`, `adr`, `impact-analysis` |
 | 7 | `planning` | planner | auto | `architecture-spec`, `acceptance-criteria`, `impact-analysis` | `work-plan` |
-| 8 | `implementation` | implementer | auto | `work-plan`, `architecture-spec`, `acceptance-criteria`, `ux-hifi` | `change-set` |
+| 8 | `implementation` | implementer¹ | auto | `work-plan`, `architecture-spec`, `acceptance-criteria`, `ux-hifi` | `change-set` |
 | 9 | `review` | reviewer | **human** | `change-set`, `architecture-spec`, `acceptance-criteria`, `work-plan` | `review-report` |
 | 10 | `qa` | qa | auto | `change-set`, `acceptance-criteria`, `review-report` | `test-plan`, `test-report` |
 | 11 | `documentation` | documenter | auto | `change-set`, `requirements-spec`, `architecture-spec`, `adr`, `test-report`, `project-context` | `docs-update` |
 | 12 | `delivery` | orchestrator | **human** | `change-set`, `review-report`, `test-report`, `requirements-spec`, `docs-update` | `release-notes` |
 | 13 | `pull_request` | orchestrator | auto | `release-notes`, `change-set`, `review-report`, `test-report`, `docs-update` | `pull-request` |
+
+¹ **A specialist may take stage 8.** When the projects in scope are Python, Go or JVM server-side code, `backend-developer` implements instead of `implementer` — same stage, same inputs and outputs, same gate. The pipeline picks from the stacks recorded when the run started; nothing to configure, and no match leaves `implementer` in place. `hermit status` names whoever actually ran it.
 
 Stages 3–5 are skipped entirely when the run carries the `no-ui` flag.
 

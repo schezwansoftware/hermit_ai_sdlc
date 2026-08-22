@@ -27,7 +27,7 @@ for (const d of ['agents', 'skills', 'knowledge']) {
 const reg = loadRegistry(paths);
 console.log(`workspace: ${root}`);
 console.log(`agents: ${reg.agents.length}  skills: ${reg.skills.length}  knowledge: ${reg.knowledge.length}`);
-assert.equal(reg.agents.length, 10, 'expected 10 agents');
+assert.equal(reg.agents.length, 11, 'expected 11 agents');
 
 // Every stage must resolve to a real agent, and every input must be produced upstream.
 const produced = new Set();
@@ -51,6 +51,25 @@ for (const s of DEFAULT_PIPELINE.stages) {
   }
 }
 console.log('✓ pipeline graph is consistent (inputs produced upstream, scopes match)');
+
+// A specialist may narrow what it reads — that is the point of role scoping — but
+// it must be able to write every output of the stage it claims, or submitArtifact
+// rejects it at the moment it tries to hand off.
+const specialists = reg.agents.filter((a) => a.specializes);
+assert.ok(specialists.length, 'expected at least one specialist agent');
+for (const a of specialists) {
+  const s = DEFAULT_PIPELINE.stages.find((x) => x.id === a.specializes.stage);
+  assert.ok(s, `agent ${a.id} specialises in unknown stage "${a.specializes.stage}"`);
+  assert.ok(a.stages.includes(s.id), `specialist ${a.id} must also claim stage ${s.id} in "stages"`);
+  for (const out of s.outputs ?? []) {
+    assert.ok(
+      (a.context?.writes?.artifacts ?? []).includes(out),
+      `specialist ${a.id} lacks write scope for stage output "${out}"`
+    );
+  }
+  assert.ok(a.skills.length, `specialist ${a.id} carries no skills — nothing distinguishes it from the default`);
+}
+console.log(`✓ ${specialists.length} specialist(s) can produce every output of the stage they claim`);
 
 const run = createRun(paths, { title: 'Cart survives session expiry', intent: 'Preserve the cart when a session expires during checkout', jiraKey: 'PROJ-412', flags: [] });
 console.log(`✓ run created: ${run.id}`);
@@ -86,7 +105,9 @@ const BODIES = {
   'ux-midfi': '# Mid-Fidelity\n\n## States\n| Screen | State |\n|---|---|\n| S1 | error |\n\n## Interaction Specification\nSubmit.\n\n## Content & Messaging\n"Your session expired."\n\n## Responsive Behaviour\n1 breakpoint.\n\n## Validation Rules\nRequired.\n',
   'ux-hifi': '# High-Fidelity\n\n## Design System Usage\n| Element | Component |\n|---|---|\n| Banner | Alert |\n\n## Visual Specification\ntokens only.\n\n## Accessibility\nContrast 4.6:1, keyboard path defined, live region on error.\n\n## Asset Manifest\nNone.\n\n## Implementation Notes\nUse Alert.\n',
   'design-tokens': '{"color.text.primary":"#111"}',
-  'architecture-spec': '# Architecture\n\n## Approach\nPersist cart before redirect.\n\n## Component Map\n| Component | Path |\n|---|---|\n| checkout | src/checkout.js |\n\n## Interfaces\nPOST /checkout\n\n## Data Design\ncarts table.\n\n## Sequence\n1. expire 2. persist 3. redirect\n\n## Security\nAuthZ on cart owner.\n\n## Observability\nMetric cart.preserved\n\n## Performance\np95 300ms.\n\n## Alternatives Considered\nClient storage — rejected, PCI.\n',
+  // Carries ## Frontend Design but deliberately not ## Backend Design: this run's
+  // scope has no server-side project, so only the ui-conditional criterion fires.
+  'architecture-spec': '# Architecture\n\n## Approach\nPersist cart before redirect.\n\n## Component Map\n| Component | Path |\n|---|---|\n| checkout | src/checkout.js |\n\n## Interfaces\nPOST /checkout\n\n## Frontend Design\nBanner component reused; cart state stays server-owned.\n\n## Data Design\ncarts table.\n\n## Sequence\n1. expire 2. persist 3. redirect\n\n## Security\nAuthZ on cart owner.\n\n## Observability\nMetric cart.preserved\n\n## Performance\np95 300ms.\n\n## Alternatives Considered\nClient storage — rejected, PCI.\n',
   adr: '# ADR-1: Persist cart server-side\n\n## Status\nProposed\n\n## Context\nPCI.\n\n## Decision\nWe will persist server-side.\n\n## Consequences\n### Positive\nSurvives device change.\n### Negative\nExtra write on a hot path.\n### Neutral\nNew table.\n\n## Alternatives\nLocalStorage — rejected: PCI scope.\n',
   'impact-analysis': '# Impact Analysis\n\n## Blast Radius\ncheckout only.\n\n## Breaking Changes\nNone.\n\n## Risks\n- Silent write failure — medium — add alert.\n\n## Rollout\nFlag.\n\n## Rollback\nDrop the flag; migration is additive.\n\n## Effort Signal\nS.\n',
   'work-plan': '# Work Plan\n\n## Sequence\nWP-1\n\n## Work Packages\n- WP-1 persist cart — satisfies AC-1 — tests: checkout.test.js\n\n## Critical Path\nWP-1\n\n## Parallelisation\nNone.\n\n## Deferred\nGuest checkout.\n',

@@ -22,7 +22,7 @@ An agent expert in **Angular** and **React** development.
 
 ---
 
-### 2. Hermit Backend Developer Agent
+### 2. Hermit Backend Developer Agent — **shipped**
 
 An agent expert in **Python**, **Go**, and **Java Spring Boot** development.
 
@@ -40,6 +40,13 @@ An agent expert in **Python**, **Go**, and **Java Spring Boot** development.
 - Implements backend services with framework-appropriate patterns
 - Routes to language/framework-specific skill packs
 - Coordinates with documentation agent for API specs
+
+**As built:**
+- `packages/agents/agents/backend-developer.md`, with three skill packs: `backend-python`, `backend-go`, `backend-java-spring`
+- Claims the implementation stage through a `specializes` block in its frontmatter, matched against the stacks and kinds a run touches. No config; no match leaves `implementer` in place
+- A flat single-service repo is classified from its root, so routing works without a monorepo layout
+- `architecture-spec` now requires `## Backend Design` (server-side work) and `## Frontend Design` (interface work), each conditional on the run
+- Verified by `npm run check:specialists`
 
 ---
 
@@ -82,5 +89,15 @@ Enhance `hermit init` to intelligently detect the tech stack and enroll required
 ## Priority
 
 - [ ] UI Developer Agent
-- [ ] Backend Developer Agent  
+- [x] Backend Developer Agent
 - [ ] Framework Detection & Auto-Enrollment
+
+## Notes for the UI Developer agent
+
+The routing mechanism is in place and is what the UI agent should reuse: declare a
+`specializes` block for the `implementation` stage matching `kind: [frontend, mobile]`.
+
+One thing to resolve first — a run holding both a React app and a Go service currently
+matches two specialists and the first by agent id wins. Splitting one stage between two
+agents needs work-package-level dispatch, which the ledger does not model yet. Until then
+the mixed case is a known limitation, called out in `resolveStageAgent`.
