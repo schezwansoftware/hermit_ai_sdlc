@@ -261,13 +261,15 @@ const tools = [
       flags: z.array(z.string()).optional().describe('e.g. ["no-ui"] to skip the three UX stages')
     },
     handler: ({ intent, title, jiraKey, flags = [] }) => {
-      const run = createRun(paths, { title: title ?? intent.slice(0, 80), intent, jiraKey: jiraKey ?? null, flags });
+      const run = createRun(paths, { title: title ?? intent.slice(0, 80), intent, jiraKey: jiraKey ?? null, flags, registry: registry() });
       const stage = getStage(DEFAULT_PIPELINE, run.currentStage);
+      // The specialist that will actually take the stage, not the pipeline default.
+      const agent = run.stages[stage?.id]?.agent ?? stage?.agent;
       return {
         runId: run.id,
         firstStage: stage?.id,
-        firstAgent: stage?.agent,
-        message: `Run ${run.id} created. Call hermit_next_task to receive the ${stage?.agent} brief.`
+        firstAgent: agent,
+        message: `Run ${run.id} created. Call hermit_next_task to receive the ${agent} brief.`
       };
     }
   }

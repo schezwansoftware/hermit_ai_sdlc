@@ -4,8 +4,26 @@ import { GATE_STATUS, findOpenGate, openGate } from './gates.js';
 import { evaluateAll } from './criteria.js';
 import { writeArtifact, listArtifacts } from './artifacts.js';
 import { buildContextBundle, outputContract, renderBundle } from './context.js';
+import { resolveStageAgent } from './registry.js';
 
 const TERMINAL = [STAGE_STATUS.DONE, STAGE_STATUS.SKIPPED];
+
+/**
+ * The facts conditional exit criteria are evaluated against.
+ *
+ * `ui` is read back from stage state rather than recomputed, so it reports what
+ * this run actually did: a run started with `--no-ui` skipped the UX stages, and
+ * requiring a frontend design section from it would be incoherent.
+ */
+export function criteriaContext(run, pipeline = DEFAULT_PIPELINE) {
+  return {
+    monorepo: Boolean(run.monorepo),
+    backend: Boolean(run.tech?.backend),
+    ui: pipeline.stages.some(
+      (s) => s.skipWhen === 'no-ui' && run.stages?.[s.id]?.status !== STAGE_STATUS.SKIPPED
+    )
+  };
+}
 
 /**
  * Fold any decided gates into stage state. Called before every read so the run
@@ -77,7 +95,7 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
   }
 
   const stage = getStage(pipeline, run.currentStage);
-  const agent = registry.agentsById[stage.agent] ?? registry.agentForStage(stage.id);
+  const agent = resolveStageAgent(registry, stage, run);
   if (!agent) {
     return { state: 'blocked', message: `No agent definition found for stage "${stage.id}" (expected agent id "${stage.agent}").` };
   }
@@ -89,11 +107,19 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
     st.status = STAGE_STATUS.IN_PROGRESS;
     st.startedAt = st.startedAt ?? new Date().toISOString();
     journal(paths, run.id, { event: 'stage.started', stage: stage.id, agent: agent.id, attempt: st.attempts });
-    saveRun(paths, run);
   }
+  // Record who is actually on this stage, so status and the audit trail name the
+  // specialist rather than the pipeline's default.
+  if (st.agent !== agent.id) {
+    st.agent = agent.id;
+    if (agent.id !== stage.agent) {
+      journal(paths, run.id, { event: 'stage.specialised', stage: stage.id, agent: agent.id, insteadOf: stage.agent, stacks: run.tech?.stacks ?? [] });
+    }
+  }
+  saveRun(paths, run);
 
   const bundle = buildContextBundle({ paths, run, stage, agent, registry, budget });
-  const contract = outputContract(stage);
+  const contract = outputContract(stage, criteriaContext(run, pipeline));
   const priorGate = [...run.gates].reverse().find((g) => g.stageId === stage.id && g.comment);
 
   return {
@@ -147,7 +173,7 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
   const stage = getStage(pipeline, run.currentStage);
   if (!stage) return { state: 'complete', message: `Run ${run.id} is already complete.` };
 
-  const check = evaluateAll(paths, run.id, stage.exitCriteria, { monorepo: Boolean(run.monorepo) });
+  const check = evaluateAll(paths, run.id, stage.exitCriteria, criteriaContext(run, pipeline));
   if (!check.ok) {
     journal(paths, run.id, { event: 'handoff.rejected', stage: stage.id, agent: agentId, failed: check.failed });
     return {
@@ -215,7 +241,7 @@ export function runStatus({ paths, run, pipeline = DEFAULT_PIPELINE }) {
     stages: pipeline.stages.map((s) => ({
       id: s.id,
       title: s.title,
-      agent: s.agent,
+      agent: run.stages[s.id]?.agent ?? s.agent,
       gate: s.gate,
       status: run.stages[s.id]?.status ?? 'pending',
       attempts: run.stages[s.id]?.attempts ?? 0

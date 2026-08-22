@@ -96,6 +96,10 @@ export const DEFAULT_PIPELINE = {
         { id: 'arch-written', type: 'artifact_exists', artifact: 'architecture-spec' },
         { id: 'adr-written', type: 'artifact_exists', artifact: 'adr' },
         { id: 'components-mapped', type: 'contains', artifact: 'architecture-spec', value: '## Component Map' },
+        // The design splits by side so each implementing specialist has a section
+        // addressed to it, rather than one blended document both must re-derive.
+        { id: 'backend-design', type: 'contains', artifact: 'architecture-spec', value: '## Backend Design', when: { backend: true } },
+        { id: 'frontend-design', type: 'contains', artifact: 'architecture-spec', value: '## Frontend Design', when: { ui: true } },
         { id: 'risks-listed', type: 'contains', artifact: 'impact-analysis', value: '## Risks' },
         { id: 'cross-project-impact', type: 'contains', artifact: 'impact-analysis', value: '## Cross-Project Impact', when: { monorepo: true } }
       ]

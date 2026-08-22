@@ -46,6 +46,29 @@ Checked by the pipeline. One row per component touched or added:
 Every contract crossing a boundary: HTTP endpoints, events, function signatures,
 schemas. Request/response shapes, status codes, error bodies, versioning.
 
+## Backend Design
+Required whenever the work has a server side — checked by the pipeline.
+Written *for the backend implementer*, who reads this section first:
+- Service and module boundaries, and which existing component absorbs what
+- Transaction boundaries: where each opens, what is atomic with what
+- Persistence: entities, ownership, indexes, and the query shapes hot paths need
+- Idempotency and retry semantics for anything a webhook, queue or scheduler reaches
+- Failure semantics per interface: what is retried, what is dead-lettered, what surfaces
+- Concurrency: what runs in parallel, what serialises it
+
+## Frontend Design
+Required whenever the work has a user interface — checked by the pipeline.
+Written *for the UX and UI implementers*:
+- Component decomposition and which are new versus reused
+- State ownership: what is server state, what is client state, and where it lives
+- Data fetching and cache invalidation per view
+- Loading, empty, error and partial-failure states each screen must handle
+- Routing and navigation changes
+
+The two sections meet at `## Interfaces`. If a response shape does not carry what
+a screen needs, that is a contradiction to resolve here — not for two implementers
+to discover separately.
+
 ## Data Design
 Schema changes, migrations, indexes, backfill strategy, rollback of the migration.
 

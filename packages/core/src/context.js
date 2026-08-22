@@ -1,5 +1,6 @@
 import { readArtifact } from './artifacts.js';
 import { artifactSpec } from './artifacts.js';
+import { criterionApplies } from './criteria.js';
 import { effectiveMcpTools } from './servers.js';
 import { scopePathsToProjects } from './projects.js';
 
@@ -75,18 +76,25 @@ function pick(doc) {
   return { id: doc.id, name: doc.name, description: doc.description, body: doc.body };
 }
 
-/** Derive the required output shape from the stage's exit criteria. */
-export function outputContract(stage) {
+/**
+ * Derive the required output shape from the stage's exit criteria.
+ *
+ * Criteria that do not apply to this run are filtered out first, so the brief
+ * never demands a section the handoff check will not ask for — an agent told to
+ * write `## Frontend Design` for a run with no interface writes filler.
+ */
+export function outputContract(stage, context = {}) {
+  const active = (stage.exitCriteria ?? []).filter((c) => criterionApplies(c, context));
   const outputs = (stage.outputs ?? []).map((id) => {
     const spec = artifactSpec(id);
-    const criteria = (stage.exitCriteria ?? []).filter((c) => c.artifact === id);
+    const criteria = active.filter((c) => c.artifact === id);
     const requiredSections = criteria
       .filter((c) => c.type === 'contains' && typeof c.value === 'string' && c.value.startsWith('#'))
       .map((c) => c.value);
     const required = criteria.some((c) => c.type === 'artifact_exists');
     return { id, title: spec.title, format: spec.format, required, requiredSections };
   });
-  return { outputs, exitCriteria: stage.exitCriteria ?? [] };
+  return { outputs, exitCriteria: active };
 }
 
 /** Render a bundle as the markdown an agent actually reads. */
