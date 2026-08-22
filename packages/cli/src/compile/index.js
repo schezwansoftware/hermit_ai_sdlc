@@ -58,7 +58,7 @@ export function writeFiles(root, files, { force = false, manifestFile } = {}) {
 
     // For JSON configs we own one key and leave the rest of the file alone.
     if (exists && file.merge && !force) {
-      content = mergeJsonKey(current, file.content, file.merge) ?? content;
+      content = mergeJsonKey(current, file.content, file.merge, file.owns) ?? content;
     }
 
     if (exists && current === content) {
@@ -67,7 +67,10 @@ export function writeFiles(root, files, { force = false, manifestFile } = {}) {
       continue;
     }
 
-    const editedByHuman = exists && previous && sha(current) !== previous;
+    // A merge file is *expected* to carry other people's entries — that is what
+    // merging is for — so a changed hash is not evidence of a conflict there.
+    // Hermit rewrites only the entries it owns and leaves the rest as found.
+    const editedByHuman = exists && previous && !file.merge && sha(current) !== previous;
     if (editedByHuman && !force) {
       result.skipped.push(file.path);
       result.modified.push(file.path);
@@ -87,12 +90,24 @@ export function writeFiles(root, files, { force = false, manifestFile } = {}) {
   return result;
 }
 
-/** Replace one top-level key in an existing JSON file, preserving everything else. */
-function mergeJsonKey(currentText, nextText, key) {
+/**
+ * Replace one top-level key in an existing JSON file, preserving everything else.
+ *
+ * `owns` names the entries inside that key which belong to Hermit. Anything else
+ * under it — a server the user configured themselves — survives untouched, while
+ * one of Hermit's own that is no longer enabled is dropped. Without that second
+ * half, disabling a server in config would leave it in the generated file
+ * forever, because a plain merge only ever adds.
+ */
+function mergeJsonKey(currentText, nextText, key, owns = null) {
   try {
     const current = JSON.parse(currentText);
     const next = JSON.parse(nextText);
-    const merged = { ...current, [key]: { ...(current[key] ?? {}), ...next[key] } };
+    const kept = { ...(current[key] ?? {}) };
+    if (Array.isArray(owns)) {
+      for (const id of owns) if (!(id in (next[key] ?? {}))) delete kept[id];
+    }
+    const merged = { ...current, [key]: { ...kept, ...next[key] } };
     return JSON.stringify(merged, null, 2) + '\n';
   } catch {
     return null; // not valid JSON — fall back to overwrite rules
