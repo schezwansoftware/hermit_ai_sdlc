@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { DEFAULT_PIPELINE } from './pipeline.js';
-import { hasUiProject, techScope } from './projects.js';
+import { hasUiProject, techScope, UI_KINDS } from './projects.js';
 import { resolveStageAgent } from './registry.js';
 import { ensureDir, readJson, writeJson } from './paths.js';
 
@@ -38,12 +38,19 @@ export function createRun(paths, {
   // conditional criteria apply, must not drift if the repository changes mid-run.
   const tech = techScope(paths.root, projects, selected);
 
+  // The services stage is also the catch-all — infrastructure, libraries and
+  // unclassified work have nowhere else to go — so it stands down only when the
+  // run is nothing but interface work.
+  const uiOnly = uiInScope && !tech.backend && tech.units.every((u) => UI_KINDS.has(u.kind));
+
   const stages = {};
   for (const stage of pipeline.stages) {
     const skipped =
       stage.skipWhen === 'no-ui'
         ? flags.includes('no-ui') || !uiInScope
-        : Boolean(stage.skipWhen && flags.includes(stage.skipWhen));
+        : stage.skipWhen === 'ui-only'
+          ? uiOnly
+          : Boolean(stage.skipWhen && flags.includes(stage.skipWhen));
     stages[stage.id] = {
       status: skipped ? STAGE_STATUS.SKIPPED : STAGE_STATUS.PENDING,
       // Resolved up front so `hermit status` names the specialist before the

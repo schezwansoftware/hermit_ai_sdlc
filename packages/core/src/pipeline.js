@@ -5,12 +5,18 @@
  * own several stages (ux-designer owns the three fidelity stages), and one stage
  * may be revisited when a gate is rejected with `changes_requested`.
  *
+ * Architecture precedes UX. The architect settles the user flow, the services
+ * and the contracts between them; the designer then draws screens against a
+ * ratified system rather than the architect reverse-engineering a system from
+ * approved screens. Implementation follows the same direction — the interface
+ * is built against the approved design first, then the services behind it.
+ *
  * gate: 'hitl'  -> a human must approve via the CLI before the run advances
  * gate: 'auto'  -> advances as soon as exit criteria pass
  */
 export const DEFAULT_PIPELINE = {
   id: 'sdlc.default',
-  version: '1.0.0',
+  version: '2.0.0',
   name: 'End-to-end SDLC',
   stages: [
     {
@@ -44,13 +50,34 @@ export const DEFAULT_PIPELINE = {
       ]
     },
     {
+      id: 'architecture',
+      title: 'Technical architecture',
+      agent: 'architect',
+      gate: 'hitl',
+      inputs: ['requirements-spec', 'acceptance-criteria', 'codebase-map', 'project-context'],
+      outputs: ['architecture-spec', 'adr', 'impact-analysis'],
+      exitCriteria: [
+        { id: 'arch-written', type: 'artifact_exists', artifact: 'architecture-spec' },
+        { id: 'adr-written', type: 'artifact_exists', artifact: 'adr' },
+        { id: 'components-mapped', type: 'contains', artifact: 'architecture-spec', value: '## Component Map' },
+        // The design splits by side so each implementing agent has a section
+        // addressed to it, rather than one blended document both must re-derive.
+        { id: 'backend-design', type: 'contains', artifact: 'architecture-spec', value: '## Backend Design', when: { backend: true } },
+        { id: 'frontend-design', type: 'contains', artifact: 'architecture-spec', value: '## Frontend Design', when: { ui: true } },
+        // UX designs against this, so the flow has to be settled here first.
+        { id: 'user-flow-defined', type: 'contains', artifact: 'architecture-spec', value: '## User Flow', when: { ui: true } },
+        { id: 'risks-listed', type: 'contains', artifact: 'impact-analysis', value: '## Risks' },
+        { id: 'cross-project-impact', type: 'contains', artifact: 'impact-analysis', value: '## Cross-Project Impact', when: { monorepo: true } }
+      ]
+    },
+    {
       id: 'ux_lofi',
       title: 'UX — low fidelity',
       agent: 'ux-designer',
       gate: 'hitl',
       optional: true,
       skipWhen: 'no-ui',
-      inputs: ['requirements-spec', 'acceptance-criteria', 'project-context'],
+      inputs: ['requirements-spec', 'acceptance-criteria', 'architecture-spec', 'project-context'],
       outputs: ['ux-lofi'],
       exitCriteria: [
         { id: 'lofi-written', type: 'artifact_exists', artifact: 'ux-lofi' },
@@ -64,7 +91,7 @@ export const DEFAULT_PIPELINE = {
       gate: 'hitl',
       optional: true,
       skipWhen: 'no-ui',
-      inputs: ['ux-lofi', 'requirements-spec'],
+      inputs: ['ux-lofi', 'requirements-spec', 'architecture-spec'],
       outputs: ['ux-midfi'],
       exitCriteria: [
         { id: 'midfi-written', type: 'artifact_exists', artifact: 'ux-midfi' },
@@ -78,7 +105,7 @@ export const DEFAULT_PIPELINE = {
       gate: 'hitl',
       optional: true,
       skipWhen: 'no-ui',
-      inputs: ['ux-midfi', 'requirements-spec'],
+      inputs: ['ux-midfi', 'requirements-spec', 'architecture-spec'],
       outputs: ['ux-hifi', 'design-tokens'],
       exitCriteria: [
         { id: 'hifi-written', type: 'artifact_exists', artifact: 'ux-hifi' },
@@ -86,30 +113,11 @@ export const DEFAULT_PIPELINE = {
       ]
     },
     {
-      id: 'architecture',
-      title: 'Technical architecture',
-      agent: 'architect',
-      gate: 'hitl',
-      inputs: ['requirements-spec', 'acceptance-criteria', 'codebase-map', 'ux-hifi'],
-      outputs: ['architecture-spec', 'adr', 'impact-analysis'],
-      exitCriteria: [
-        { id: 'arch-written', type: 'artifact_exists', artifact: 'architecture-spec' },
-        { id: 'adr-written', type: 'artifact_exists', artifact: 'adr' },
-        { id: 'components-mapped', type: 'contains', artifact: 'architecture-spec', value: '## Component Map' },
-        // The design splits by side so each implementing specialist has a section
-        // addressed to it, rather than one blended document both must re-derive.
-        { id: 'backend-design', type: 'contains', artifact: 'architecture-spec', value: '## Backend Design', when: { backend: true } },
-        { id: 'frontend-design', type: 'contains', artifact: 'architecture-spec', value: '## Frontend Design', when: { ui: true } },
-        { id: 'risks-listed', type: 'contains', artifact: 'impact-analysis', value: '## Risks' },
-        { id: 'cross-project-impact', type: 'contains', artifact: 'impact-analysis', value: '## Cross-Project Impact', when: { monorepo: true } }
-      ]
-    },
-    {
       id: 'planning',
       title: 'Work breakdown',
       agent: 'planner',
       gate: 'auto',
-      inputs: ['architecture-spec', 'acceptance-criteria', 'impact-analysis'],
+      inputs: ['architecture-spec', 'acceptance-criteria', 'impact-analysis', 'ux-hifi'],
       outputs: ['work-plan'],
       exitCriteria: [
         { id: 'plan-written', type: 'artifact_exists', artifact: 'work-plan' },
@@ -118,11 +126,30 @@ export const DEFAULT_PIPELINE = {
       ]
     },
     {
-      id: 'implementation',
-      title: 'Implementation',
+      id: 'implementation_ui',
+      title: 'Implementation — interface',
       agent: 'implementer',
       gate: 'auto',
-      inputs: ['work-plan', 'architecture-spec', 'acceptance-criteria', 'ux-hifi'],
+      optional: true,
+      skipWhen: 'no-ui',
+      inputs: ['work-plan', 'architecture-spec', 'acceptance-criteria', 'ux-hifi', 'design-tokens'],
+      outputs: ['change-set-ui'],
+      exitCriteria: [
+        { id: 'ui-changeset-written', type: 'artifact_exists', artifact: 'change-set-ui' },
+        { id: 'ui-files-listed', type: 'contains', artifact: 'change-set-ui', value: '## Files Changed' },
+        { id: 'ui-projects-touched', type: 'contains', artifact: 'change-set-ui', value: '## Projects Touched', when: { monorepo: true } }
+      ]
+    },
+    {
+      // Also the catch-all: it skips only when the run is purely interface work,
+      // so infrastructure, libraries and anything unclassified still get built.
+      id: 'implementation_backend',
+      title: 'Implementation — services',
+      agent: 'implementer',
+      gate: 'auto',
+      optional: true,
+      skipWhen: 'ui-only',
+      inputs: ['work-plan', 'architecture-spec', 'acceptance-criteria', 'change-set-ui'],
       outputs: ['change-set'],
       exitCriteria: [
         { id: 'changeset-written', type: 'artifact_exists', artifact: 'change-set' },
@@ -135,7 +162,7 @@ export const DEFAULT_PIPELINE = {
       title: 'Code review',
       agent: 'reviewer',
       gate: 'hitl',
-      inputs: ['change-set', 'architecture-spec', 'acceptance-criteria', 'work-plan'],
+      inputs: ['change-set', 'change-set-ui', 'architecture-spec', 'acceptance-criteria', 'work-plan'],
       outputs: ['review-report'],
       exitCriteria: [
         { id: 'review-written', type: 'artifact_exists', artifact: 'review-report' },
@@ -147,7 +174,7 @@ export const DEFAULT_PIPELINE = {
       title: 'QA and verification',
       agent: 'qa',
       gate: 'auto',
-      inputs: ['change-set', 'acceptance-criteria', 'review-report'],
+      inputs: ['change-set', 'change-set-ui', 'acceptance-criteria', 'review-report'],
       outputs: ['test-plan', 'test-report'],
       exitCriteria: [
         { id: 'plan-written', type: 'artifact_exists', artifact: 'test-plan' },
@@ -160,7 +187,7 @@ export const DEFAULT_PIPELINE = {
       title: 'Documentation update',
       agent: 'documenter',
       gate: 'auto',
-      inputs: ['change-set', 'requirements-spec', 'architecture-spec', 'adr', 'test-report', 'project-context'],
+      inputs: ['change-set', 'change-set-ui', 'requirements-spec', 'architecture-spec', 'adr', 'test-report', 'project-context'],
       outputs: ['docs-update'],
       exitCriteria: [
         { id: 'docs-written', type: 'artifact_exists', artifact: 'docs-update' },
@@ -173,7 +200,7 @@ export const DEFAULT_PIPELINE = {
       title: 'Delivery sign-off',
       agent: 'orchestrator',
       gate: 'hitl',
-      inputs: ['change-set', 'review-report', 'test-report', 'requirements-spec', 'docs-update'],
+      inputs: ['change-set', 'change-set-ui', 'review-report', 'test-report', 'requirements-spec', 'docs-update'],
       outputs: ['release-notes'],
       exitCriteria: [
         { id: 'notes-written', type: 'artifact_exists', artifact: 'release-notes' },
@@ -185,7 +212,7 @@ export const DEFAULT_PIPELINE = {
       title: 'Pull request',
       agent: 'orchestrator',
       gate: 'auto',
-      inputs: ['release-notes', 'change-set', 'review-report', 'test-report', 'docs-update'],
+      inputs: ['release-notes', 'change-set', 'change-set-ui', 'review-report', 'test-report', 'docs-update'],
       outputs: ['pull-request'],
       exitCriteria: [
         { id: 'pr-written', type: 'artifact_exists', artifact: 'pull-request' },
@@ -202,15 +229,16 @@ export const ARTIFACTS = {
   glossary: { format: 'md', title: 'Domain glossary', producer: 'onboarding' },
   'requirements-spec': { format: 'md', title: 'Requirements specification', producer: 'analyst' },
   'acceptance-criteria': { format: 'md', title: 'Acceptance criteria', producer: 'analyst' },
+  'architecture-spec': { format: 'md', title: 'Architecture specification', producer: 'architect' },
+  adr: { format: 'md', title: 'Architecture decision record', producer: 'architect' },
+  'impact-analysis': { format: 'md', title: 'Impact analysis', producer: 'architect' },
   'ux-lofi': { format: 'md', title: 'Low-fidelity wireframes', producer: 'ux-designer' },
   'ux-midfi': { format: 'md', title: 'Mid-fidelity wireframes', producer: 'ux-designer' },
   'ux-hifi': { format: 'md', title: 'High-fidelity design spec', producer: 'ux-designer' },
   'design-tokens': { format: 'json', title: 'Design tokens', producer: 'ux-designer' },
-  'architecture-spec': { format: 'md', title: 'Architecture specification', producer: 'architect' },
-  adr: { format: 'md', title: 'Architecture decision record', producer: 'architect' },
-  'impact-analysis': { format: 'md', title: 'Impact analysis', producer: 'architect' },
   'work-plan': { format: 'md', title: 'Work plan', producer: 'planner' },
-  'change-set': { format: 'md', title: 'Change set summary', producer: 'implementer' },
+  'change-set-ui': { format: 'md', title: 'Change set summary — interface', producer: 'implementer' },
+  'change-set': { format: 'md', title: 'Change set summary — services', producer: 'implementer' },
   'review-report': { format: 'md', title: 'Code review report', producer: 'reviewer' },
   'test-plan': { format: 'md', title: 'Test plan', producer: 'qa' },
   'test-report': { format: 'md', title: 'Test report', producer: 'qa' },

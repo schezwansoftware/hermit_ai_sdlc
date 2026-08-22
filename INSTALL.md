@@ -53,8 +53,8 @@ Both do the same work and are safe to re-run.
 
 ```
 .hermit/                          ← yours to edit; survives sync and upgrades
-  agents/          11 agent definitions
-  skills/          22 skill packs
+  agents/          12 agent definitions
+  skills/          24 skill packs
   knowledge/       2 knowledge packs (edit engineering-standards first)
   config.json      servers, SCM provider, write permissions, projects
   runs/            run state and artifacts (git-ignored by default)
@@ -269,14 +269,18 @@ Hermit generates `.github/instructions/project-<id>.instructions.md` with `apply
 
 ## Specialist agents
 
-Most stages have one agent. The **implementation** stage has two, and Hermit picks between them from what the repository is written in:
+Implementation is **two stages** — the interface first, then the services behind it — and each picks its agent from what the repository is written in:
 
-| Scope contains | Implements |
-|---|---|
-| Python, Go or Java/Spring Boot server-side code | `backend-developer` |
-| anything else | `implementer` |
+| Stage | Runs when | Default | Specialist |
+|---|---|---|---|
+| `implementation_ui` | anything in scope has an interface | `implementer` | `ui-developer` — React, Angular |
+| `implementation_backend` | the run is not *purely* interface work | `implementer` | `backend-developer` — Python, Go, Java/Spring Boot |
 
 There is nothing to configure. The stacks come from the same project scan `hermit projects` prints, and a flat single-service repository is classified from its root. If no specialist matches, the pipeline's own agent runs — a specialist can narrow a stage, never leave it unstaffed.
+
+A full-stack change engages both specialists, one per stage. The services stage is also the **catch-all**: infrastructure, libraries and anything unclassified arrive there, which is why it stands down only for a run that is nothing but interface work.
+
+The interface is built **before** the services, against the contract in `## Interfaces` rather than against running code. Whatever the contract failed to promise is recorded in `change-set-ui` under `## Contract Gaps`, and the services stage reads that section first.
 
 ```bash
 npx hermit status     # names the agent that will run each stage
@@ -287,12 +291,15 @@ To see which agent handled a stage after the fact, `npx hermit journal` records 
 
 ### What this asks of the architect
 
-Because the two sides of a change can be built by different agents, `architecture-spec` splits to match:
+**Architecture now runs before the UX stages.** The architect settles the user flow, the services and the contracts; the designer draws screens against a ratified system. The architect never sees the designs — they do not exist yet — so the flow and the interfaces have to be complete enough to design from.
 
-- `## Backend Design` — required when the work has a server side
-- `## Frontend Design` — required when the work has an interface
+Because of that, and because the two sides are built by different agents, `architecture-spec` must carry:
 
-Both are checked mechanically at the architecture gate, and neither is demanded of a run it does not apply to: a backend-only run is never asked for a frontend design.
+- `## User Flow` — when the work has an interface. The end-to-end path through the system, which the UX stages elaborate into screens.
+- `## Frontend Design` — when the work has an interface.
+- `## Backend Design` — when the work has a server side.
+
+All are checked mechanically at the architecture gate, and none is demanded of a run it does not apply to: a backend-only run is never asked for a user flow.
 
 ---
 

@@ -7,7 +7,7 @@ stages: [planning]
 model: gpt-5
 context:
   reads:
-    artifacts: [architecture-spec, acceptance-criteria, impact-analysis]
+    artifacts: [architecture-spec, acceptance-criteria, impact-analysis, ux-hifi]
     mcp:
       - jira_get_issue
       - jira_create_issue

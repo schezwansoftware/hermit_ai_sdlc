@@ -7,7 +7,7 @@ stages: [documentation]
 model: gpt-5
 context:
   reads:
-    artifacts: [change-set, requirements-spec, architecture-spec, adr, test-report, project-context]
+    artifacts: [change-set, change-set-ui, requirements-spec, architecture-spec, adr, test-report, project-context]
     mcp:
       - confluence_search
       - confluence_get_page

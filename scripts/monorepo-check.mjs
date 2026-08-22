@@ -83,8 +83,8 @@ assert.ok(uiStatus.stages.filter((s) => s.id.startsWith('ux_')).every((s) => s.s
   'UX stages must run when a frontend project is in scope');
 console.log('  ✓ frontend-scoped run kept the UX stages');
 
-// Drive to implementation to inspect the scoped bundle.
-const impl = DEFAULT_PIPELINE.stages.find((s) => s.id === 'implementation');
+// Drive to the interface implementation stage to inspect the scoped bundle.
+const impl = DEFAULT_PIPELINE.stages.find((s) => s.id === 'implementation_ui');
 const implAgent = registry.agentsById[impl.agent];
 const { buildContextBundle } = await import('@hermit/core');
 const bundle = buildContextBundle({
