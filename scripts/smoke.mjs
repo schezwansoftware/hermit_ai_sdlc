@@ -27,7 +27,7 @@ for (const d of ['agents', 'skills', 'knowledge']) {
 const reg = loadRegistry(paths);
 console.log(`workspace: ${root}`);
 console.log(`agents: ${reg.agents.length}  skills: ${reg.skills.length}  knowledge: ${reg.knowledge.length}`);
-assert.equal(reg.agents.length, 11, 'expected 11 agents');
+assert.equal(reg.agents.length, 12, 'expected 12 agents');
 
 // Every stage must resolve to a real agent, and every input must be produced upstream.
 const produced = new Set();
@@ -105,12 +105,14 @@ const BODIES = {
   'ux-midfi': '# Mid-Fidelity\n\n## States\n| Screen | State |\n|---|---|\n| S1 | error |\n\n## Interaction Specification\nSubmit.\n\n## Content & Messaging\n"Your session expired."\n\n## Responsive Behaviour\n1 breakpoint.\n\n## Validation Rules\nRequired.\n',
   'ux-hifi': '# High-Fidelity\n\n## Design System Usage\n| Element | Component |\n|---|---|\n| Banner | Alert |\n\n## Visual Specification\ntokens only.\n\n## Accessibility\nContrast 4.6:1, keyboard path defined, live region on error.\n\n## Asset Manifest\nNone.\n\n## Implementation Notes\nUse Alert.\n',
   'design-tokens': '{"color.text.primary":"#111"}',
-  // Carries ## Frontend Design but deliberately not ## Backend Design: this run's
-  // scope has no server-side project, so only the ui-conditional criterion fires.
-  'architecture-spec': '# Architecture\n\n## Approach\nPersist cart before redirect.\n\n## Component Map\n| Component | Path |\n|---|---|\n| checkout | src/checkout.js |\n\n## Interfaces\nPOST /checkout\n\n## Frontend Design\nBanner component reused; cart state stays server-owned.\n\n## Data Design\ncarts table.\n\n## Sequence\n1. expire 2. persist 3. redirect\n\n## Security\nAuthZ on cart owner.\n\n## Observability\nMetric cart.preserved\n\n## Performance\np95 300ms.\n\n## Alternatives Considered\nClient storage — rejected, PCI.\n',
+  // Carries ## User Flow and ## Frontend Design but deliberately not ## Backend
+  // Design: this run's scope has no server-side project, so only the
+  // ui-conditional criteria fire.
+  'architecture-spec': '# Architecture\n\n## Approach\nPersist cart before redirect.\n\n## Component Map\n| Component | Path |\n|---|---|\n| checkout | src/checkout.js |\n\n## Interfaces\nPOST /checkout\n\n## User Flow\n1. submit → 2. session expired → 3. persist cart → 4. redirect to sign-in → 5. resume\n\n## Frontend Design\nBanner component reused; cart state stays server-owned.\n\n## Data Design\ncarts table.\n\n## Sequence\n1. expire 2. persist 3. redirect\n\n## Security\nAuthZ on cart owner.\n\n## Observability\nMetric cart.preserved\n\n## Performance\np95 300ms.\n\n## Alternatives Considered\nClient storage — rejected, PCI.\n',
   adr: '# ADR-1: Persist cart server-side\n\n## Status\nProposed\n\n## Context\nPCI.\n\n## Decision\nWe will persist server-side.\n\n## Consequences\n### Positive\nSurvives device change.\n### Negative\nExtra write on a hot path.\n### Neutral\nNew table.\n\n## Alternatives\nLocalStorage — rejected: PCI scope.\n',
   'impact-analysis': '# Impact Analysis\n\n## Blast Radius\ncheckout only.\n\n## Breaking Changes\nNone.\n\n## Risks\n- Silent write failure — medium — add alert.\n\n## Rollout\nFlag.\n\n## Rollback\nDrop the flag; migration is additive.\n\n## Effort Signal\nS.\n',
   'work-plan': '# Work Plan\n\n## Sequence\nWP-1\n\n## Work Packages\n- WP-1 persist cart — satisfies AC-1 — tests: checkout.test.js\n\n## Critical Path\nWP-1\n\n## Parallelisation\nNone.\n\n## Deferred\nGuest checkout.\n',
+  'change-set-ui': '# Change Set — Interface\n\n## Summary\nBanner and redirect wired up.\n\n## Files Changed\n| File | Change |\n|---|---|\n| src/ui/Banner.jsx | added |\n\n## Work Packages Completed\n| WP | Status |\n|---|---|\n| WP-1 | complete |\n\n## Screens & States\n| Screen | States | Matches hi-fi |\n|---|---|---|\n| S1 | error, loading | yes |\n\n## Contract Gaps\nNone.\n\n## Accessibility\nContrast 4.6:1; focus moves to the banner; live region announces expiry.\n\n## Deviations\nNone.\n\n## Tests\nBanner.test.jsx — npm test\n\n## Verification Performed\n`npm test` → 41 passed.\n\n## Known Gaps\nNone.\n',
   'change-set': '# Change Set\n\n## Summary\nCart persisted.\n\n## Files Changed\n| File | Change |\n|---|---|\n| src/checkout.js | modified |\n\n## Work Packages Completed\n| WP | Status |\n|---|---|\n| WP-1 | complete |\n\n## Deviations\nNone.\n\n## Tests\ncheckout.test.js — npm test\n\n## Verification Performed\n`npm test` → 41 passed.\n\n## Known Gaps\nNone.\n',
   'review-report': '# Code Review\n\n**Verdict**: approve\n\n## Summary\nMatches the design.\n\n## Blockers\nNone.\n\n## Findings\nNone.\n\n## Nits\nNone.\n\n## AC Coverage\n| AC | Implemented | Tested |\n|---|---|---|\n| AC-1 | yes | yes |\n\n## Deviations Reviewed\nNone.\n\n## What I Verified\nRead src/checkout.js; ran npm test.\n',
   'test-plan': '# Test Plan\n\n## Scope\nCheckout.\n\n## Traceability\n| AC | Test |\n|---|---|\n| AC-1 | TC-1 |\n\n## Test Cases\nTC-1.\n\n## Edge Cases & Negative Tests\nConcurrent expiry.\n\n## Non-Functional Verification\nLoad test.\n\n## Environment\nLocal.\n\n## Out of Scope\nGuest.\n',

@@ -1,6 +1,6 @@
 <h1>Hermit</h1>
 
-**An agentic SDLC pipeline for GitHub Copilot.** Eleven role agents carry work from a ticket to a merged pull request. Each sees only the context its role declares. A human signs off at the seven points where being wrong is expensive — and no agent can forge that signature.
+**An agentic SDLC pipeline for GitHub Copilot.** Twelve role agents carry work from a ticket to a merged pull request. Each sees only the context its role declares. A human signs off at the seven points where being wrong is expensive — and no agent can forge that signature.
 
 ```bash
 npm i @hermit/cli
@@ -13,23 +13,28 @@ That is the whole setup. → [Install guide](INSTALL.md) · [Concepts](docs/01-c
 ## The pipeline
 
 ```
- 1  onboard          onboarding    ·  project context, codebase map, glossary
- 2  requirements     analyst       ⏸  spec + acceptance criteria
- 3  ux_lofi          ux-designer   ⏸  structure and flow          ┐
- 4  ux_midfi         ux-designer   ⏸  every screen × every state  ├ skipped when
- 5  ux_hifi          ux-designer   ⏸  visual contract, tokens     ┘ nothing has a UI
- 6  architecture     architect     ⏸  design, ADRs, impact analysis
- 7  planning         planner       ·  work packages
- 8  implementation   implementer*  ·  the code and its tests
- 9  review           reviewer      ⏸  review against the ratified design
-10  qa               qa            ·  test plan, execution, result
-11  documentation    documenter    ·  update what the change invalidated
-12  delivery         orchestrator  ⏸  release notes, sign-off
-13  pull_request     orchestrator  ·  opens only after 12 is approved
+ 1  onboard                 onboarding    ·  project context, codebase map, glossary
+ 2  requirements            analyst       ⏸  spec + acceptance criteria
+ 3  architecture            architect     ⏸  user flow, services, contracts, ADRs
+ 4  ux_lofi                 ux-designer   ⏸  structure and flow          ┐
+ 5  ux_midfi                ux-designer   ⏸  every screen × every state  ├ skipped when
+ 6  ux_hifi                 ux-designer   ⏸  visual contract, tokens     ┘ nothing has a UI
+ 7  planning                planner       ·  work packages
+ 8  implementation_ui       implementer*  ·  the interface and its tests    (skipped: no UI)
+ 9  implementation_backend  implementer*  ·  the services and their tests   (skipped: UI only)
+10  review                  reviewer      ⏸  review against the ratified design
+11  qa                      qa            ·  test plan, execution, result
+12  documentation           documenter    ·  update what the change invalidated
+13  delivery                orchestrator  ⏸  release notes, sign-off
+14  pull_request            orchestrator  ·  opens only after 13 is approved
 
-                                   ⏸ = a human decides
-                                   * a specialist may take this stage — see below
+                                          ⏸ = a human decides
+                                          * a specialist may take this stage — see below
 ```
+
+**Architecture precedes UX.** The architect settles the user flow, the services and the contracts between them; the designer then draws screens against a ratified system, rather than the architect reverse-engineering a system from approved screens. The architect never sees the designs — they do not exist yet, which is why `## User Flow` and `## Interfaces` have to be complete enough to design from.
+
+**The interface is built before the services.** Stage 8 works against the published contract, not against running code, and records anything the contract failed to promise under `## Contract Gaps`. Stage 9 reads that section first. A mock on one side and nothing on the other is the failure this ordering is designed to surface early.
 
 The pull request comes **after** the human gate, never before. Opening one notifies your team, so it follows sign-off rather than preceding it.
 
@@ -81,23 +86,31 @@ The pipeline names one agent per stage. A **specialist** claims the same stage c
 ```yaml
 # .hermit/agents/backend-developer.md
 specializes:
-  stage: implementation
+  stage: implementation_backend
   when:
     stack: [python, go, jvm]
     kind:  [backend, batch, lib, unknown]
 ```
 
-When a run's scope contains Python, Go or JVM server-side code, `backend-developer` implements it — same stage, same inputs and outputs, same gate — carrying language packs the generic implementer does not. Node and React work stays with `implementer`. Nothing to configure: the stacks are read from the project scan already done at `hermit start`, and a flat single-service repository is classified from its root.
+| Stage | Default | Specialist |
+|---|---|---|
+| `implementation_ui` | `implementer` | `ui-developer` — React, Angular |
+| `implementation_backend` | `implementer` | `backend-developer` — Python, Go, JVM |
 
-Routing **narrows, never strands**. No match leaves the pipeline's own agent in place, so adding a specialist cannot leave a stage unstaffed. `hermit status` names whoever will actually run it, from the moment the run is created:
+Nothing to configure: the stacks come from the project scan already done at `hermit start`, and a flat single-service repository is classified from its root. Because implementation is two stages, a full-stack run engages **both** specialists — one per stage — rather than one of them doing the other's job.
+
+Routing **narrows, never strands**. No match leaves the pipeline's own agent in place, so adding a specialist cannot leave a stage unstaffed. `hermit status` names whoever will actually run each stage, from the moment the run is created:
 
 ```
-  ·  7. planning        planner
-  ·  8. implementation  backend-developer
-  ·  9. review          reviewer           [human gate]
+  ·  7. planning               planner
+  ·  8. implementation_ui      ui-developer
+  ·  9. implementation_backend backend-developer
+  · 10. review                 reviewer           [human gate]
 ```
 
-Because the two sides are built by different agents, the architect's design splits to match: `architecture-spec` must carry `## Backend Design` when the work has a server side and `## Frontend Design` when it has an interface. Both are checked mechanically, and neither is demanded of a run it does not apply to.
+The services stage is also the **catch-all** — infrastructure, libraries and anything unclassified arrive there — so it stands down only when the run is nothing but interface work.
+
+Because the two sides are built by different agents, the architect's design splits to match: `architecture-spec` must carry `## Backend Design` when the work has a server side, and `## User Flow` plus `## Frontend Design` when it has an interface. All are checked mechanically, and none is demanded of a run it does not apply to.
 
 ---
 
@@ -144,15 +157,16 @@ Hermit also emits `.github/instructions/project-<id>.instructions.md` scoped wit
 | `onboarding` | onboard | project context, codebase map, glossary |
 | `analyst` | requirements | requirements spec, acceptance criteria |
 | `ux-designer` | ux_lofi · ux_midfi · ux_hifi | wireframes, design spec, design tokens |
-| `architect` | architecture | architecture spec, ADRs, impact analysis |
+| `architect` | architecture | user flow, architecture spec, ADRs, impact analysis |
 | `planner` | planning | work plan, tracker subtasks |
-| `implementer` | implementation | the code, tests, change set |
-| `backend-developer` | implementation *(python · go · jvm)* | the code, tests, change set |
+| `implementer` | implementation_ui · implementation_backend | the code, tests, change set |
+| `ui-developer` | implementation_ui *(react · angular)* | the interface, tests, change set |
+| `backend-developer` | implementation_backend *(python · go · jvm)* | the services, tests, change set |
 | `reviewer` | review | review report |
 | `qa` | qa | test plan, test report |
 | `documenter` | documentation | updated docs, staleness audit |
 
-Backed by 22 skill packs and 2 knowledge packs. All markdown, all in `.hermit/`, all yours to edit — then `hermit sync`.
+Backed by 24 skill packs and 2 knowledge packs. All markdown, all in `.hermit/`, all yours to edit — then `hermit sync`.
 
 **Start by replacing `knowledge/engineering-standards`** with your team's real standards. It is injected into every agent's context and is the cheapest way to make all ten behave like your team rather than a generic one.
 
@@ -225,7 +239,7 @@ npm run check:gates -- <workspace>  # gate enforcement across the MCP boundary
 ```
 packages/
   core/            state machine, gates, context scoping, project detection
-  agents/          11 agents · 22 skills · 2 knowledge packs (markdown)
+  agents/          12 agents · 24 skills · 2 knowledge packs (markdown)
   cli/             hermit CLI and the host compiler
   mcp-shared/      server bootstrap, HTTP client, config
   mcp-workflow/    the ledger

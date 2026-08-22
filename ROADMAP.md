@@ -2,7 +2,7 @@
 
 ## Planned Enhancements
 
-### 1. Hermit UI Developer Agent
+### 1. Hermit UI Developer Agent — **shipped**
 
 An agent expert in **Angular** and **React** development.
 
@@ -19,6 +19,14 @@ An agent expert in **Angular** and **React** development.
 - Takes UX designs and implements pixel-perfect, accessible components
 - Handles framework-specific concerns that UX Designer doesn't address
 - Routes to appropriate skill packs based on detected framework
+
+**As built:**
+- `packages/agents/agents/ui-developer.md`, with `frontend-react` and `frontend-angular` skill packs
+- **The pipeline was reordered.** Architecture now runs *before* the UX stages: the architect settles the user flow, services and contracts, and the designer draws screens against a ratified system. `architecture-spec` gained a required `## User Flow` section; the architect no longer reads `ux-hifi`, and the UX designer now reads `architecture-spec`
+- **Implementation split into two stages** — `implementation_ui` then `implementation_backend` — which is what resolved the mixed-stack problem below: a full-stack run engages both specialists, one per stage, instead of one agent doing the other's job
+- The interface is built first, against the published contract rather than running code, and reports `## Contract Gaps` in `change-set-ui` for the services stage to close
+- `implementation_backend` doubles as the catch-all, so infra, libraries and unclassified work still get built
+- Verified by `npm run check:specialists`
 
 ---
 
@@ -88,16 +96,21 @@ Enhance `hermit init` to intelligently detect the tech stack and enroll required
 
 ## Priority
 
-- [ ] UI Developer Agent
+- [x] UI Developer Agent
 - [x] Backend Developer Agent
 - [ ] Framework Detection & Auto-Enrollment
 
-## Notes for the UI Developer agent
+## What remains
 
-The routing mechanism is in place and is what the UI agent should reuse: declare a
-`specializes` block for the `implementation` stage matching `kind: [frontend, mobile]`.
+Only item 3, and it is narrower than written above — language detection already
+ships, because routing needed it.
 
-One thing to resolve first — a run holding both a React app and a Go service currently
-matches two specialists and the first by agent id wins. Splitting one stage between two
-agents needs work-package-level dispatch, which the ledger does not model yet. Until then
-the mixed case is a known limitation, called out in `resolveStageAgent`.
+**Done:** the language and kind of every project in scope (`python`, `go`, `jvm`,
+`node`; `frontend`, `backend`, `batch`, `infra`, …), recorded on the run and driving
+which agent takes each implementation stage.
+
+**Remaining:** detecting the *framework within* a language — Django vs FastAPI vs
+Flask, Gin vs Echo, React vs Angular — and loading only the packs that apply. Today
+`ui-developer` carries both React and Angular guidance regardless of which the project
+uses, and `backend-developer` carries all three languages. That is wasted context and
+diluted focus, which is the failure the one-pack-per-technology split was meant to avoid.

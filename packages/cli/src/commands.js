@@ -190,13 +190,15 @@ export function cmdStatus(opts) {
   log(c.dim(`  ${s.intent}`));
   if (s.jiraKey) log(c.dim(`  tracker: ${s.jiraKey}`));
   log('');
-  // Sized to the longest name present: a specialist agent id is longer than any
-  // of the pipeline defaults, and a fixed width ragged the gate column.
+  // Sized to the longest name present. Both columns outgrew their old fixed
+  // widths when implementation split in two, and a stale width raggeds the gate
+  // column rather than truncating, so measure instead of guessing.
+  const stageWidth = Math.max(...s.stages.map((st) => st.id.length));
   const agentWidth = Math.max(...s.stages.map((st) => st.agent.length));
   for (const [i, st] of s.stages.entries()) {
     const gate = st.gate === 'hitl' ? c.dim(' [human gate]') : '';
     const attempts = st.attempts > 1 ? c.dim(` ×${st.attempts}`) : '';
-    log(`  ${mark[st.status] ?? '?'} ${String(i + 1).padStart(2)}. ${st.id.padEnd(15)} ${c.dim(st.agent.padEnd(agentWidth))}${gate}${attempts}`);
+    log(`  ${mark[st.status] ?? '?'} ${String(i + 1).padStart(2)}. ${st.id.padEnd(stageWidth)} ${c.dim(st.agent.padEnd(agentWidth))}${gate}${attempts}`);
   }
   log('');
   log(`  Status: ${s.status === 'completed' ? c.green(s.status) : s.status === 'blocked' ? c.red(s.status) : s.status}   Artifacts: ${s.artifacts.length}`);

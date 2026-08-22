@@ -18,7 +18,8 @@ import {
 } from '@hermit/core';
 
 const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
-const IMPL = DEFAULT_PIPELINE.stages.find((s) => s.id === 'implementation');
+const BACKEND = DEFAULT_PIPELINE.stages.find((s) => s.id === 'implementation_backend');
+const UI = DEFAULT_PIPELINE.stages.find((s) => s.id === 'implementation_ui');
 
 const mk = (root, rel, file, body) => {
   fs.mkdirSync(path.join(root, rel), { recursive: true });
@@ -41,6 +42,7 @@ mk(root, 'services/api', 'package.json', '{"name":"api","dependencies":{"express
 mk(root, 'services/billing', 'go.mod', 'module acme/billing\n\ngo 1.22\n');
 mk(root, 'services/ledger', 'pyproject.toml', '[project]\nname = "ledger"\n');
 mk(root, 'services/payments', 'pom.xml', '<project><artifactId>payments</artifactId></project>');
+mk(root, 'infra', 'main.tf', 'resource "aws_s3_bucket" "b" {}');
 
 const paths = layout(root);
 const registry = loadRegistry(paths);
@@ -51,50 +53,76 @@ for (const [id, stack] of [['services-billing', 'go'], ['services-ledger', 'pyth
   assert.ok(p, `fixture project ${id} was not detected`);
   assert.ok((p.stack ?? []).includes(stack), `${id} should carry stack ${stack}, got ${p.stack}`);
 }
+assert.equal(projects.find((x) => x.id === 'infra')?.kind, 'infra', 'fixture needs a real infra project');
+assert.equal(projects.find((x) => x.id === 'apps-web')?.kind, 'frontend');
 console.log(`  ✓ detected ${projects.length} projects across go, python, jvm and node`);
 
 // --- Routing: which agent takes stage 8 -------------------------------------
 
 const routeFor = (selectedProjects) => {
   const run = createRun(paths, { title: 't', intent: 'i', projects, selectedProjects, registry });
-  return { run, agent: resolveStageAgent(registry, IMPL, run) };
+  return {
+    run,
+    backend: resolveStageAgent(registry, BACKEND, run).id,
+    ui: resolveStageAgent(registry, UI, run).id
+  };
 };
 
-for (const [ids, expected, why] of [
-  [['services-billing'], 'backend-developer', 'a Go service'],
-  [['services-ledger'], 'backend-developer', 'a Python service'],
-  [['services-payments'], 'backend-developer', 'a Spring Boot service'],
-  [['services-api'], 'implementer', 'a Node backend has no specialist'],
-  [['apps-web'], 'implementer', 'a React app has no specialist yet'],
-  [['services-billing', 'apps-web'], 'backend-developer', 'a mixed run picks the one specialist that matches']
+for (const [ids, expBackend, expUi, why] of [
+  [['services-billing'], 'backend-developer', 'implementer', 'a Go service'],
+  [['services-ledger'], 'backend-developer', 'implementer', 'a Python service'],
+  [['services-payments'], 'backend-developer', 'implementer', 'a Spring Boot service'],
+  [['services-api'], 'implementer', 'implementer', 'a Node backend has no specialist'],
+  [['apps-web'], 'implementer', 'ui-developer', 'a React app'],
+  [['services-billing', 'apps-web'], 'backend-developer', 'ui-developer', 'full stack: one specialist per stage']
 ]) {
-  const { agent } = routeFor(ids);
-  assert.equal(agent.id, expected, `${ids.join('+')} should route to ${expected} — ${why}`);
+  const r = routeFor(ids);
+  assert.equal(r.backend, expBackend, `${ids.join('+')} services stage → ${expBackend} (${why})`);
+  assert.equal(r.ui, expUi, `${ids.join('+')} interface stage → ${expUi} (${why})`);
 }
-console.log('  ✓ implementation routes by stack: go/python/jvm → backend-developer, node/react → implementer');
+console.log('  ✓ each implementation stage routes independently — no tie to break');
+
+// The case the split exists for: a full-stack run gets both experts, not one of
+// them doing the other's job.
+const full = routeFor(['services-billing', 'apps-web']);
+assert.notEqual(full.backend, full.ui, 'a full-stack run must engage two different specialists');
+console.log('  ✓ a full-stack run engages both specialists, one per stage');
 
 // Routing has to be visible before the stage runs, or a reviewer planning the
 // work cannot see who is going to do it.
-const goRun = routeFor(['services-billing']).run;
-assert.equal(
-  runStatus({ paths, run: goRun }).stages.find((s) => s.id === 'implementation').agent,
-  'backend-developer',
-  'hermit status must name the specialist from the moment the run is created'
-);
-console.log('  ✓ status names the specialist before the stage starts');
+const fullStages = runStatus({ paths, run: full.run }).stages;
+assert.equal(fullStages.find((s) => s.id === 'implementation_ui').agent, 'ui-developer');
+assert.equal(fullStages.find((s) => s.id === 'implementation_backend').agent, 'backend-developer');
+console.log('  ✓ status names both specialists from the moment the run is created');
 
 // The pipeline's own agent must still be reachable, or a specialist could strand
 // a stage rather than narrow it.
 for (const stage of DEFAULT_PIPELINE.stages) {
-  const { run } = routeFor(['services-billing']);
-  assert.ok(resolveStageAgent(registry, stage, run), `stage ${stage.id} resolved to no agent`);
+  assert.ok(resolveStageAgent(registry, stage, full.run), `stage ${stage.id} resolved to no agent`);
 }
 console.log('  ✓ every stage still resolves to an agent under a specialist-matching run');
 
 // A run predating this feature carries no tech scope. It must fall back, not throw.
-assert.equal(resolveStageAgent(registry, IMPL, {}).id, 'implementer');
-assert.equal(resolveStageAgent(registry, IMPL, { tech: { units: [] } }).id, 'implementer');
+for (const stage of [BACKEND, UI]) {
+  assert.equal(resolveStageAgent(registry, stage, {}).id, 'implementer');
+  assert.equal(resolveStageAgent(registry, stage, { tech: { units: [] } }).id, 'implementer');
+}
 console.log('  ✓ a run with no recorded tech scope falls back to the pipeline default');
+
+// --- Stage skipping: the services stage is also the catch-all ---------------
+
+for (const [ids, uiSkipped, backendSkipped, why] of [
+  [['apps-web'], false, true, 'pure interface work needs no services stage'],
+  [['services-billing'], true, false, 'pure services work needs no interface stage'],
+  [['services-billing', 'apps-web'], false, false, 'full stack runs both'],
+  [['infra'], true, false, 'infrastructure is neither, so the catch-all takes it']
+]) {
+  const st = runStatus({ paths, run: routeFor(ids).run }).stages;
+  const skipped = (id) => st.find((x) => x.id === id).status === 'skipped';
+  assert.equal(skipped('implementation_ui'), uiSkipped, `${ids.join('+')}: implementation_ui skip — ${why}`);
+  assert.equal(skipped('implementation_backend'), backendSkipped, `${ids.join('+')}: implementation_backend skip — ${why}`);
+}
+console.log('  ✓ interface stage skips without UI; services stage skips only for pure-UI runs');
 
 // --- A flat single-service repo is classified from its root ------------------
 
@@ -111,7 +139,7 @@ assert.equal(flatScope.backend, true);
 
 const flatRun = createRun(flatPaths, { title: 't', intent: 'i', projects: [], selectedProjects: [] });
 assert.equal(
-  resolveStageAgent(loadRegistry(flatPaths), IMPL, flatRun).id,
+  resolveStageAgent(loadRegistry(flatPaths), BACKEND, flatRun).id,
   'backend-developer',
   'a flat Python repo declares no projects but is still Python'
 );
@@ -199,7 +227,7 @@ console.log('  ✓ with the section present, architecture reached its human gate
 // --- The specialist's scope is narrowed the same way the default's is --------
 
 const bundle = buildContextBundle({
-  paths, run: loadRun(paths, run.id), stage: IMPL,
+  paths, run: loadRun(paths, run.id), stage: BACKEND,
   agent: registry.agentsById['backend-developer'], registry
 });
 assert.ok(bundle.writablePaths.length, 'backend-developer must have writable paths');

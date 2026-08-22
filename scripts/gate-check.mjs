@@ -79,7 +79,8 @@ assert.ok(/Approved/.test(out), out);
 console.log('  ✓ human approved via CLI:', out.trim().split('\n').filter(Boolean)[0].replace(/\x1b\[\d+m/g, '').trim());
 
 const after = await call('hermit_status');
-assert.equal(after.currentStage, 'ux_lofi');
+// Architecture follows requirements: the designer draws against a ratified system.
+assert.equal(after.currentStage, 'architecture');
 const decided = (await call('hermit_gate_status')).decided.at(-1);
 assert.equal(decided.decision, 'approve');
 assert.ok(decided.by, 'the decision must record who made it');

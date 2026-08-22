@@ -7,7 +7,7 @@ stages: [delivery, pull_request]
 model: gpt-5
 context:
   reads:
-    artifacts: [change-set, review-report, test-report, requirements-spec, docs-update, release-notes]
+    artifacts: [change-set, change-set-ui, review-report, test-report, requirements-spec, docs-update, release-notes]
     mcp:
       - hermit_status
       - hermit_next_task
