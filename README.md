@@ -57,12 +57,10 @@ Markdown cannot remember. A run spans days, three Copilot surfaces and several p
 
 ## Human gates are structural
 
-A gate a model can talk its way past is decoration. Approval is unreachable from the agent side:
+A gate a model can talk its way past is decoration. A decision reaches the run through exactly two doors, both keyed to a human:
 
-- No approval tool is exposed over MCP. There is nothing to call.
-- `decideGate` refuses any source but `cli`.
-- While a gate is open, `hermit_next_task` refuses to dispatch the next agent.
-- Every decision records who made it, in an append-only journal alongside a sha256 of each artifact.
+- **A terminal.** `hermit gate approve <id>` — always available, unaffected by anything an agent does.
+- **Chat.** The orchestrator, and only the orchestrator, can call `hermit_decide_gate` — and only once a human has explicitly said what to decide. The host asks them to confirm before it runs; that confirmation is the decision Hermit records, not the model's own read of the work.
 
 ```bash
 hermit gate list
@@ -70,9 +68,11 @@ hermit gate approve gate_architecture_7f3c
 hermit gate changes gate_architecture_7f3c -m "name the rollback path explicitly"
 ```
 
-`changes` returns the stage to its agent with your comment attached to its next brief.
+`changes` returns the stage to its agent with your comment attached to its next brief. Whichever door a decision comes through, `decideGate` still refuses anything that isn't `cli` or `chat`, role agents never see `hermit_decide_gate` at all, and while a gate is open `hermit_next_task` refuses to dispatch the next agent regardless. Every decision records who made it and which door they used, in an append-only journal alongside a sha256 of each artifact.
 
-`scripts/gate-check.mjs` proves this from the far side of a real MCP connection: it enumerates the tool list for anything resembling approval, tries dispatching past an open gate, and calls `decideGate` with a non-CLI source. All three are refused; then the CLI approves and the run advances.
+**The chat door is real, not theatrical, but it is not as strong as the terminal.** It depends on the host actually asking for confirmation on that specific call — which is why `hermit_decide_gate` is the only tool in this server marked destructive. A workspace that has set the `hermit` MCP server to auto-approve everything has switched that confirmation off along with it. If that risk isn't one you want, keep gates in the terminal and never grant the tool broad approval.
+
+`scripts/gate-check.mjs` proves the shape of this from the far side of a real MCP connection: `hermit_decide_gate` is enumerable, but calling it as anything other than the orchestrator is refused, calling it without a reason for a rejection is refused, and `decideGate` itself still throws for any source outside `cli`/`chat`. Then a call as the orchestrator, with a human's decision to relay, actually advances the run — the same way the CLI does.
 
 ---
 
@@ -243,14 +243,14 @@ Two things Copilot's format cannot express:
 
 **Skills are loaded, not inlined.** Copilot has no skills mechanism, so every pack body is concatenated into every agent file that references it. Claude Code loads them on demand — smaller agent files, and one pack edited once with nothing to drift.
 
-**The last gate hole closes.** Hermit's claim is that gate approval is unreachable from the agent side: no MCP tool exposes it, and `decideGate` refuses any source but the CLI. Bash was the remaining hole — an agent can type the command itself. A generated `PreToolUse` hook refuses it:
+**A Bash-typed CLI command is closed off.** However a gate gets decided (see [Human gates are structural](#human-gates-are-structural) above), typing `hermit gate approve <id>` into Bash is not a legitimate route on either harness — it bypasses the confirmation that makes a chat decision real. Claude Code enforces this with a generated `PreToolUse` hook, since Bash is a real tool there in a way it is not on Copilot:
 
 ```
-$ hermit gate approve gate_architecture_7f3c     # attempted by an agent
+$ hermit gate approve gate_architecture_7f3c     # attempted by an agent, through Bash
 Blocked by Hermit: only a human may decide a gate.
 ```
 
-A person running it in their own terminal is unaffected; the hook only sees tool calls.
+A person running the same command in their own terminal is unaffected; the hook only sees tool calls Claude itself makes.
 
 ---
 

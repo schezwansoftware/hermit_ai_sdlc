@@ -100,6 +100,7 @@ Enhance `hermit init` to intelligently detect the tech stack and enroll required
 - [x] Backend Developer Agent
 - [ ] Framework Detection & Auto-Enrollment
 - [x] Claude Code harness
+- [x] Chat-based gate decisions
 
 ---
 
@@ -113,8 +114,23 @@ Enhance `hermit init` to intelligently detect the tech stack and enroll required
 - Dropping a harness reports the files Hermit stops maintaining rather than deleting them
 - Claude output: `CLAUDE.md`, `.claude/agents/`, `.claude/skills/` (packs as real loadable skills, not inlined), `.mcp.json`, `.claude/settings.json`
 - The main session is the orchestrator — Claude Code has no `mode: primary` equivalent, and a subagent dispatching subagents fights the model
-- **Enforcement Copilot cannot express:** write-scope denials, and a `PreToolUse` hook refusing `hermit gate approve|reject|changes` from Bash. That closes the last route by which an agent could decide its own gate
+- **Enforcement Copilot cannot express:** write-scope denials, and a `PreToolUse` hook refusing `hermit gate approve|reject|changes` from Bash — the route by which an agent could type the CLI command itself
 - Verified by `npm run check:harness` — eight properties, including that a harness changes format but never scope
+
+---
+
+### 5. Chat-based gate decisions — **shipped**
+
+Approvals, changes-requested and rejects were CLI-only. `hermit_decide_gate` reaches all three from chat too, on both harnesses.
+
+**As built:**
+- New MCP tool on the `hermit` server, marked `destructive: true` — the only tool in the server carrying that annotation, so a host has a real signal to pause and ask before it runs
+- `decideGate` now accepts `source: 'chat'` alongside `'cli'`; any other value is still refused outright
+- Orchestrator-only, enforced twice: compiled into only the orchestrator's MCP allowlist on Copilot (role agents never see the tool in their frontmatter), and checked again server-side against the caller's declared `agent` id
+- The non-approve decisions (`changes_requested`, `reject`) now require a comment at the `decideGate` level itself, not just in the CLI — the same rule enforced wherever a decision comes from
+- `resolveDecider` centralises "who is deciding" (git identity, then OS user) so a chat decision is attributed the same way a CLI one is
+- **The trade-off is real, not decorative, and is documented as such:** the host's confirmation prompt *is* the human decision this records. A workspace that auto-approves the `hermit` server has switched that confirmation off — README, INSTALL.md and the compiled orchestrator instructions all say so plainly rather than implying the guarantee is unchanged
+- Verified by `scripts/gate-check.mjs` over a real MCP connection: the tool is enumerable and destructive-flagged, a non-orchestrator caller is refused, a comment-less `changes_requested` is refused, and a correct orchestrator call actually advances the run
 
 ---
 

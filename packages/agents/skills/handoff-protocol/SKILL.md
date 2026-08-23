@@ -37,6 +37,6 @@ Three possible answers:
 ## Rules
 
 - Exit criteria are mechanical, not a judgement of quality. Passing them means your output is structurally complete, nothing more.
-- Never approve a gate. You have no tool that can, and asking a human to "just confirm" in chat does not count — only a recorded CLI decision does.
+- Never decide a gate on your own judgement. If you are a role agent, you have no tool that can. If you are the orchestrator, `hermit_decide_gate` exists but only relays a decision a human just gave you explicitly, in this conversation — it is never a stand-in for your own read that the work looks ready, and the host will ask them to confirm before it runs.
 - Never write another agent's artifact, even if you can see what it should say.
 - If you are sent back with reviewer feedback, address it explicitly in the resubmission. Silent resubmission of the same content wastes a full cycle.
