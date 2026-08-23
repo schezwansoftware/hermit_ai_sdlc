@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DEFAULT_PIPELINE, ensureDir, readJson, writeJson } from '@hermit/core';
-import { compileAgentsMd } from './copilot.js';
 import { HARNESSES, resolveHarnesses } from './harnesses.js';
 
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -11,16 +10,15 @@ const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
  * Produce every host-facing file from the canonical definitions.
  * Nothing here reads a previously generated file, so compilation is idempotent.
  *
- * `AGENTS.md` is emitted once regardless of harness: it is the portable
- * baseline that Copilot CLI and Claude Code both read, and duplicating it per
- * harness would mean two writers racing for one path.
+ * Every file comes from a harness. Nothing is shared, so a workspace only ever
+ * holds configuration for the hosts it actually enabled.
  */
 export function compileAll({
   registry, config = {}, pipeline = DEFAULT_PIPELINE,
   layoutInfo = { monorepo: false, projects: [] }, harnesses
 }) {
   const ids = harnesses ?? resolveHarnesses(config);
-  const files = [compileAgentsMd({ registry, pipeline })];
+  const files = [];
   for (const id of ids) {
     files.push(...HARNESSES[id].files({ registry, config, pipeline, layoutInfo }));
   }
@@ -29,12 +27,54 @@ export function compileAll({
 
 /**
  * Files a previously-enabled harness wrote that the current selection no longer
- * produces. Returned rather than deleted so the caller can report them: a file
- * Hermit stops owning is not automatically a file the user wants gone.
+ * produces.
  */
 export function orphanedFiles(manifest, files) {
   const current = new Set(files.map((f) => f.path));
   return Object.keys(manifest?.files ?? {}).filter((p) => !current.has(p));
+}
+
+/**
+ * Remove files a disabled harness left behind.
+ *
+ * Only files whose contents still match what Hermit last wrote are deleted —
+ * the manifest hash proves they are ours and unmodified. Anything a person
+ * touched is kept and reported instead, because switching harness is not
+ * consent to discard someone's edits.
+ */
+export function pruneOrphans(root, orphans, { manifestFile } = {}) {
+  const manifest = readJson(manifestFile, { version: 1, files: {} });
+  const result = { removed: [], kept: [] };
+
+  for (const rel of orphans) {
+    const abs = path.join(root, rel);
+    const recorded = manifest.files[rel];
+    if (!fs.existsSync(abs)) { delete manifest.files[rel]; result.removed.push(rel); continue; }
+
+    const current = fs.readFileSync(abs, 'utf8');
+    if (recorded && sha(current) === recorded) {
+      fs.rmSync(abs);
+      delete manifest.files[rel];
+      result.removed.push(rel);
+      pruneEmptyDirs(root, path.dirname(abs));
+    } else {
+      result.kept.push(rel);
+    }
+  }
+
+  if (manifestFile) writeJson(manifestFile, manifest);
+  return result;
+}
+
+/** Walk up removing directories emptied by the prune, stopping at the root. */
+function pruneEmptyDirs(root, dir) {
+  let cur = path.resolve(dir);
+  const stop = path.resolve(root);
+  while (cur.startsWith(stop) && cur !== stop) {
+    if (!fs.existsSync(cur) || fs.readdirSync(cur).length) return;
+    fs.rmdirSync(cur);
+    cur = path.dirname(cur);
+  }
 }
 
 /**

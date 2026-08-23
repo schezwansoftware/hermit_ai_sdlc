@@ -11,30 +11,19 @@
  * approved screens. Implementation follows the same direction — the interface
  * is built against the approved design first, then the services behind it.
  *
+ * Project onboarding is deliberately *not* a stage. Mapping a codebase is
+ * expensive and the answer barely changes between runs, so it is done once for
+ * the repository (`hermit onboard`) and every run reads the result. A run
+ * whose repository was never onboarded proceeds and names the missing inputs.
+ *
  * gate: 'hitl'  -> a human must approve via the CLI before the run advances
  * gate: 'auto'  -> advances as soon as exit criteria pass
  */
 export const DEFAULT_PIPELINE = {
   id: 'sdlc.default',
-  version: '2.0.0',
+  version: '3.0.0',
   name: 'End-to-end SDLC',
   stages: [
-    {
-      id: 'onboard',
-      title: 'Project onboarding',
-      agent: 'onboarding',
-      gate: 'auto',
-      optional: false,
-      once: true,
-      inputs: [],
-      outputs: ['project-context', 'codebase-map', 'glossary'],
-      exitCriteria: [
-        { id: 'context-written', type: 'artifact_exists', artifact: 'project-context' },
-        { id: 'map-written', type: 'artifact_exists', artifact: 'codebase-map' },
-        { id: 'stack-identified', type: 'contains', artifact: 'project-context', value: '## Tech Stack' },
-        { id: 'projects-mapped', type: 'contains', artifact: 'codebase-map', value: '## Projects', when: { monorepo: true } }
-      ]
-    },
     {
       id: 'requirements',
       title: 'Requirements analysis',

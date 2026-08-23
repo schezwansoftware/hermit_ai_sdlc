@@ -1,4 +1,4 @@
-import { compileAgent as compileCopilotAgent, compileCopilotInstructions, compileInstructions, compileProjectInstructions } from './copilot.js';
+import { compileAgent as compileCopilotAgent, compileAgentsMd, compileCopilotInstructions, compileInstructions, compileProjectInstructions } from './copilot.js';
 import { compileCliMcp, compileIntellijSetup, compileVsCodeMcp } from './mcp.js';
 import { claudeFiles } from './claude.js';
 
@@ -10,6 +10,10 @@ import { claudeFiles } from './claude.js';
  * They are additive by design. A team split across VS Code and Claude Code
  * enables both and shares one pipeline definition; the output paths do not
  * overlap, so nothing has to be reconciled.
+ *
+ * A harness emits only its own host's files. Enabling one must never leave the
+ * other's configuration lying in the workspace, so nothing is shared between
+ * them — not even AGENTS.md, which Copilot owns.
  */
 export const HARNESSES = {
   copilot: {
@@ -20,6 +24,10 @@ export const HARNESSES = {
       return [
         ...registry.agents.map((agent) => compileCopilotAgent(agent, { registry, pipeline })),
         compileCopilotInstructions({ registry, pipeline }),
+        // AGENTS.md belongs to this harness. Claude Code has CLAUDE.md, and
+        // shipping both would put two always-on instruction files in one
+        // workspace saying much the same thing on every turn.
+        compileAgentsMd({ registry, pipeline }),
         ...compileInstructions(),
         ...compileProjectInstructions(layoutInfo),
         compileVsCodeMcp(config),

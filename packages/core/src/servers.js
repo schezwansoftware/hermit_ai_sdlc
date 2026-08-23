@@ -24,7 +24,9 @@ export const SERVERS = {
       'hermit_get_agent',
       'hermit_gate_status',
       'hermit_journal',
-      'hermit_start_run'
+      'hermit_start_run',
+      'hermit_onboarding_task',
+      'hermit_submit_onboarding'
     ]
   },
   jira: {
@@ -168,6 +170,12 @@ export const PROTOCOL_TOOLS = Object.freeze([
   'hermit_gate_status',
   'hermit_get_agent'
 ]);
+
+/**
+ * Onboarding sits outside the pipeline, so its two tools are not part of the
+ * protocol floor every agent gets. Only the onboarding agent declares them.
+ */
+export const ONBOARDING_TOOLS = Object.freeze(['hermit_onboarding_task', 'hermit_submit_onboarding']);
 
 /** Declared MCP tools plus the protocol floor, de-duplicated. */
 export function effectiveMcpTools(declared = []) {

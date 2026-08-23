@@ -116,40 +116,90 @@ const CONVENTIONAL_LEAVES = [
 
 /**
  * A manifest, a build file or a deployment descriptor — something that says
- * "a thing is built here".
- *
- * Required of conventionally-named directories, because the name alone is not
- * evidence: Hermit writes `docs/hermit-intellij-setup.md` into the workspace
- * itself, and without this a repository would come back reporting Hermit's own
- * output as its only project.
+ * "a thing is built here". This is the strong signal: a directory carrying one
+ * is a project whatever it is called.
  */
-const PROJECT_EVIDENCE = [
-  /^package\.json$/, /^go\.mod$/, /^pom\.xml$/, /^build\.gradle(\.kts)?$/,
-  /^Cargo\.toml$/, /^(requirements\.txt|pyproject\.toml|setup\.py)$/, /^Gemfile$/,
-  /\.csproj$/, /^Dockerfile$/, /\.tf$/, /^(Chart\.yaml|Pulumi\.yaml|cdk\.json|skaffold\.yaml)$/,
+const PROJECT_MANIFEST = [
+  /^package\.json$/, /^deno\.jsonc?$/, /^go\.mod$/, /^pom\.xml$/, /^build\.gradle(\.kts)?$/,
+  /^build\.sbt$/, /^Cargo\.toml$/, /^(requirements\.txt|pyproject\.toml|setup\.py|setup\.cfg|Pipfile|manage\.py)$/,
+  /^Gemfile$/, /^composer\.json$/, /^mix\.exs$/, /^CMakeLists\.txt$/,
+  /\.(csproj|sln|fsproj)$/, /^Dockerfile$/, /^docker-compose\.ya?ml$/,
+  /\.tf$/, /^(Chart\.yaml|Pulumi\.yaml|cdk\.json|skaffold\.yaml|serverless\.ya?ml)$/,
+  /^(angular|nx|vite|next|nuxt|svelte|astro|remix|tsconfig)\.(json|config\.[jt]s)$/,
+  /^(vite|next|nuxt|svelte|astro|remix|tailwind|webpack|rollup)\.config\.[cm]?[jt]s$/,
   /^index\.html$/, /^pubspec\.yaml$/
 ];
 
-function hasProjectEvidence(root, rel) {
-  const dir = path.join(root, rel);
-  if (!fs.existsSync(dir)) return false;
-  return fs.readdirSync(dir).some((f) => PROJECT_EVIDENCE.some((re) => re.test(f)));
+/** Extensions that mean "someone writes code here", for the weaker signal below. */
+const SOURCE_EXT = /\.(jsx?|tsx?|mjs|cjs|vue|svelte|py|go|java|kt|kts|rb|rs|cs|php|ex|exs|scala|swift|dart|c|cc|cpp|h|hpp|sql)$/;
+
+const hasManifest = (dir) =>
+  fs.existsSync(dir) && fs.readdirSync(dir).some((f) => PROJECT_MANIFEST.some((re) => re.test(f)));
+
+/** Any source file in the directory or one level under it. */
+function hasSource(dir, depth = 2) {
+  if (depth === 0 || !fs.existsSync(dir)) return false;
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.isFile() && SOURCE_EXT.test(e.name)) return true;
+    if (e.isDirectory() && !IGNORE_DIRS.has(e.name) && !e.name.startsWith('.')) {
+      if (hasSource(path.join(dir, e.name), depth - 1)) return true;
+    }
+  }
+  return false;
 }
 
+/**
+ * Is something actually built here?
+ *
+ * A manifest settles it for any directory, whatever it is named — which is what
+ * lets `shop-web/` and `payments-api/` be found without being on a list of
+ * blessed names. A conventionally-named directory qualifies on source alone,
+ * because `frontend/` full of components is a project even before anyone adds a
+ * package.json.
+ *
+ * Name alone is never enough. Hermit writes `docs/hermit-intellij-setup.md`
+ * into the workspace itself, and without this a repository would come back
+ * reporting Hermit's own output as its only project.
+ */
+function hasProjectEvidence(root, rel, { conventional = false } = {}) {
+  const dir = path.join(root, rel);
+  if (hasManifest(dir)) return true;
+  return conventional && hasSource(dir);
+}
+
+/**
+ * Directories that look like projects, for a repository with no workspace
+ * manager to declare them.
+ *
+ * Three sources, all filtered by evidence: children of a conventional parent
+ * (`apps/*`, `services/*`), directories with a conventional name
+ * (`frontend/`, `api/`), and — the general case — *any* top-level directory
+ * that carries a build manifest. That last one is what finds a repository
+ * whose folders are named after the product rather than after their role.
+ */
 function conventionalDirs(root) {
-  const found = [];
+  const conventional = new Set();
+  const other = new Set();
+
   for (const parent of CONVENTIONAL_PARENTS) {
     if (!exists(root, parent)) continue;
     for (const d of fs.readdirSync(path.join(root, parent), { withFileTypes: true })) {
       if (d.isDirectory() && !IGNORE_DIRS.has(d.name) && !d.name.startsWith('.')) {
-        found.push(path.posix.join(parent, d.name));
+        conventional.add(path.posix.join(parent, d.name));
       }
     }
   }
-  for (const leaf of CONVENTIONAL_LEAVES) {
-    if (exists(root, leaf) && fs.statSync(path.join(root, leaf)).isDirectory()) found.push(leaf);
+
+  for (const d of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!d.isDirectory() || IGNORE_DIRS.has(d.name) || d.name.startsWith('.')) continue;
+    if (CONVENTIONAL_PARENTS.includes(d.name)) continue; // a container, not a project
+    (CONVENTIONAL_LEAVES.includes(d.name) ? conventional : other).add(d.name);
   }
-  return [...new Set(found)].filter((d) => hasProjectEvidence(root, d));
+
+  return [
+    ...[...conventional].filter((d) => hasProjectEvidence(root, d, { conventional: true })),
+    ...[...other].filter((d) => hasProjectEvidence(root, d))
+  ];
 }
 
 /** Infer what a project *is* from what is inside it. Evidence, not the folder name alone. */

@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url';
 import {
   layout, loadRegistry, resolveProjects, createRun, loadRun, resolveStageAgent,
   nextTask, submitArtifact, requestHandoff, runStatus, buildContextBundle,
-  techScope, isBackendProject, decideGate, openGates, saveRun, DEFAULT_PIPELINE
+  techScope, isBackendProject, decideGate, openGates, saveRun, DEFAULT_PIPELINE,
+  writeOnboardingArtifact
 } from '@hermit/core';
 
 const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
@@ -166,16 +167,14 @@ assert.ok(
   'a backend-only run skips UX, so ## Frontend Design must not be demanded'
 );
 
-nextTask({ paths, run: loadRun(paths, run.id), registry });
-const ONBOARD = {
-  'project-context': '# Project Context\n\n## Purpose\nBilling.\n\n## Tech Stack\n| Layer | Tech |\n|---|---|\n| billing | Go |\n\n## Runtime Topology\nServices.\n\n## External Dependencies\nStripe.\n\n## Conventions\ngo test.\n\n## Ownership\nPlatform.\n\n## Known Constraints\nPCI.\n\n## Confidence & Gaps\nNone.\n',
-  'codebase-map': '# Codebase Map\n\n## Entry Points\ncmd/billing\n\n## Module Boundaries\nbilling\n\n## Data Model\nEntry\n\n## Cross-Cutting Concerns\nauth\n\n## Test Topology\ninternal/\n\n## Change Hotspots\nledger.go\n\n## Projects\n| Project | Path | Kind |\n|---|---|---|\n| services-billing | services/billing/ | backend |\n',
+// Onboard the repository once, outside the run.
+for (const [id, body] of Object.entries({
+  'project-context': '# Project Context\n\n## Purpose\nBilling.\n\n## Tech Stack\n| Layer | Tech |\n|---|---|\n| billing | Go |\n\n## Runtime Topology\nServices.\n\n## Confidence & Gaps\nNone.\n',
+  'codebase-map': '# Codebase Map\n\n## Entry Points\ncmd/billing\n\n## Module Boundaries\nbilling\n\n## Projects\n| Project | Path | Kind |\n|---|---|---|\n| services-billing | services/billing/ | backend |\n',
   glossary: '# Glossary\n\n- **Entry** → `LedgerEntry`\n'
-};
-for (const [id, body] of Object.entries(ONBOARD)) {
-  submitArtifact({ paths, run: loadRun(paths, run.id), registry, artifactId: id, content: body, agentId: 'onboarding' });
+})) {
+  writeOnboardingArtifact(paths, id, body, 'onboarding');
 }
-assert.equal(requestHandoff({ paths, run: loadRun(paths, run.id), registry, agentId: 'onboarding' }).state, 'advanced');
 
 // Requirements is human-gated; approve it to reach architecture.
 nextTask({ paths, run: loadRun(paths, run.id), registry });

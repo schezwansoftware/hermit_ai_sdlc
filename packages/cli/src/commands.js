@@ -8,9 +8,11 @@ import {
   DEFAULT_PIPELINE, SERVERS, SCM_PROVIDERS, groupToolsByServer,
   createRun, loadRun, listRuns, requireActiveRun, setActiveRun, saveRun, readJournal,
   resolveProjects, detectProjects, hasUiProject,
+  onboardingStatus, setOnboardingStatus, readOnboardingArtifact,
+  ONBOARDING_ARTIFACTS, ONBOARDING_STATUS,
   nextTask, runStatus, decideGate, getGate, openGates, readArtifact, listArtifacts
 } from '@hermit/core';
-import { compileAll, installPacks, writeFiles, orphanedFiles } from './compile/index.js';
+import { compileAll, installPacks, writeFiles, orphanedFiles, pruneOrphans } from './compile/index.js';
 import { HARNESSES, resolveHarnesses } from './compile/harnesses.js';
 
 const c = {
@@ -109,19 +111,157 @@ export function cmdInit(opts) {
     log(`      ${c.dim('Run `hermit sync --force` to overwrite, or move your edits into .hermit/ where they survive.')}`);
   }
   if (orphans.length) {
-    log('');
-    log(`  ${c.yellow('!')} ${orphans.length} file(s) left behind by a harness that is no longer enabled:`);
-    for (const f of orphans) log(`      ${f}`);
-    log(`      ${c.dim('Hermit no longer maintains these. Delete them when you are sure nothing else reads them.')}`);
+    const pruned = pruneOrphans(p.root, orphans, { manifestFile: p.manifestFile });
+    if (pruned.removed.length) {
+      log(`  ${c.green('✓')} ${pruned.removed.length} file(s) from a disabled harness removed`);
+    }
+    if (pruned.kept.length) {
+      log('');
+      log(`  ${c.yellow('!')} ${pruned.kept.length} file(s) from a disabled harness kept — you edited them:`);
+      for (const f of pruned.kept) log(`      ${f}`);
+      log(`      ${c.dim('Hermit no longer maintains these. Delete them yourself once you have salvaged the edits.')}`);
+    }
   }
   log('');
+  const onboarding = offerOnboarding(p, opts);
+
+  let n = 0;
   log(c.bold('Next:'));
-  log(`  1. ${c.cyan('npx hermit doctor')}            check credentials and configuration`);
-  if (harnesses.includes('copilot')) log(`  2. Reload VS Code so it picks up ${c.dim('.vscode/mcp.json')}`);
-  if (harnesses.includes('claude')) log(`  ${harnesses.includes('copilot') ? '3' : '2'}. Restart Claude Code and approve the servers in ${c.dim('.mcp.json')}`);
-  log(`  ${harnesses.length > 1 ? '4' : '3'}. ${c.cyan('npx hermit start "your first task"')}`);
+  log(`  ${++n}. ${c.cyan('npx hermit doctor')}            check credentials and configuration`);
+  if (harnesses.includes('copilot')) log(`  ${++n}. Reload VS Code so it picks up ${c.dim('.vscode/mcp.json')}`);
+  if (harnesses.includes('claude')) log(`  ${++n}. Restart Claude Code and approve the servers in ${c.dim('.mcp.json')}`);
+  if (onboarding === ONBOARDING_STATUS.REQUESTED) {
+    log(`  ${++n}. ${c.cyan('npx hermit onboard')}           map the codebase (do this once)`);
+  }
+  log(`  ${++n}. ${c.cyan('npx hermit start "your first task"')}`);
   log('');
   return result;
+}
+
+/**
+ * Ask, once, whether to map the codebase.
+ *
+ * Onboarding reads a lot of source to produce three documents, so it costs real
+ * tokens. That cost lands on the user, not on Hermit, which is why this is a
+ * question rather than a default — and why declining is remembered instead of
+ * being re-asked on every sync.
+ *
+ * Non-interactive callers are never prompted: a CI install must not block on
+ * stdin. They get "declined" unless --onboard says otherwise.
+ */
+function offerOnboarding(p, opts = {}) {
+  const state = onboardingStatus(p);
+  if (state.complete) {
+    log(`  ${c.green('✓')} project already onboarded ${c.dim('(.hermit/onboarding/)')}`);
+    return ONBOARDING_STATUS.COMPLETE;
+  }
+
+  if (opts.onboard === true) return setOnboardingStatus(p, ONBOARDING_STATUS.REQUESTED).status;
+  if (opts.onboard === false || opts.noOnboard) return setOnboardingStatus(p, ONBOARDING_STATUS.DECLINED).status;
+
+  // Already answered: don't ask again on every sync.
+  if (state.status === ONBOARDING_STATUS.DECLINED || state.status === ONBOARDING_STATUS.REQUESTED) {
+    return state.status;
+  }
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return ONBOARDING_STATUS.NOT_ASKED;
+
+  log('');
+  log(c.bold('  Project onboarding'));
+  log(`  ${c.dim('Maps your codebase into three documents every run then reads: stack,')}`);
+  log(`  ${c.dim('module boundaries, conventions and a domain glossary. It is done once.')}`);
+  log(`  ${c.yellow('It reads a lot of source, so it will consume tokens.')}`);
+  log('');
+  const yes = askYesNo('  Set up project onboarding now? (y/n) ');
+  log('');
+
+  const status = yes ? ONBOARDING_STATUS.REQUESTED : ONBOARDING_STATUS.DECLINED;
+  setOnboardingStatus(p, status);
+  log(yes
+    ? `  ${c.green('✓')} onboarding queued — run ${c.cyan('npx hermit onboard')} to get the brief`
+    : `  ${c.dim('· skipped. Runs will proceed without it; start any time with')} ${c.cyan('npx hermit onboard')}`);
+  return status;
+}
+
+/**
+ * Blocking y/n. Anything but y/yes is no, so an accidental return declines
+ * rather than committing the user to a job that costs them tokens.
+ *
+ * Reads stdin, which the caller has already established is a terminal. Reading
+ * /dev/tty instead looks more correct and is not: it misses input that arrives
+ * on stdin, which is where it arrives.
+ */
+function askYesNo(question) {
+  process.stdout.write(question);
+
+  const buf = Buffer.alloc(1);
+  let answer = '';
+  while (true) {
+    let read = 0;
+    try { read = fs.readSync(0, buf, 0, 1, null); } catch (err) {
+      if (err.code === 'EAGAIN') continue;   // non-blocking stdin: try again
+      break;                                  // EOF or closed
+    }
+    if (!read) break;
+    const ch = buf.toString('utf8');
+    if (ch === '\n' || ch === '\r') break;
+    answer += ch;
+  }
+  process.stdout.write('\n');
+  return /^y(es)?$/i.test(answer.trim());
+}
+
+// ---------------------------------------------------------------- onboarding
+
+export function cmdOnboard(opts) {
+  const p = paths(opts);
+  requireInstalled(p);
+  const state = onboardingStatus(p);
+
+  if (opts.status) {
+    log('');
+    log(c.bold('Project onboarding'), c.dim(state.complete ? 'complete' : state.status.replace(/_/g, ' ')));
+    for (const id of ONBOARDING_ARTIFACTS) {
+      const has = state.present.includes(id);
+      log(`  ${has ? c.green('✓') : c.dim('·')} ${id}${has ? '' : c.dim('  not produced')}`);
+    }
+    log('');
+    return state;
+  }
+
+  if (state.complete && !opts.force) {
+    log('');
+    log(`  ${c.green('✓')} This repository is already onboarded.`);
+    log(`  ${c.dim('Artifacts:')} ${state.present.join(', ')} ${c.dim('in .hermit/onboarding/')}`);
+    log(`  ${c.dim('Re-run only if the codebase has drifted:')} ${c.cyan('npx hermit onboard --force')}`);
+    log('');
+    return state;
+  }
+
+  const registry = loadRegistry(p);
+  const agent = registry.agentsById.onboarding;
+  if (!agent) throw new Error('No onboarding agent installed. Run: npx hermit init');
+
+  setOnboardingStatus(p, ONBOARDING_STATUS.REQUESTED);
+  const layoutInfo = resolveProjects(p.root, readJson(p.config, {}));
+
+  if (opts.json) return { agent: agent.id, missing: state.missing, playbook: agent.playbook };
+
+  log('');
+  log(c.bold('Project onboarding'), c.dim('once per repository — not part of any run'));
+  log('');
+  if (layoutInfo.monorepo) {
+    log(`  ${c.dim('Projects:')} ${layoutInfo.projects.map((x) => x.id).join(', ')}`);
+  }
+  log(`  ${c.dim('To produce:')} ${state.missing.join(', ')}`);
+  log('');
+  log('  Hand this to your agent:');
+  log('');
+  log(`    ${c.cyan('Call hermit_onboarding_task, follow that playbook, and submit each')}`);
+  log(`    ${c.cyan('artifact with hermit_submit_onboarding.')}`);
+  log('');
+  log(`  ${c.dim('Then check progress with')} ${c.cyan('npx hermit onboard --status')}`);
+  log('');
+  return state;
 }
 
 export function cmdSync(opts) {
@@ -422,8 +562,9 @@ export function cmdDoctor(opts) {
     log(`  ${c.green('✓')} monorepo detected${layoutInfo.tool ? ` (${layoutInfo.tool})` : ''}: ${layoutInfo.projects.length} projects — ${Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(', ')}`);
   }
 
-  // Pipeline integrity: every stage has an agent, every input is produced upstream.
-  const produced = new Set();
+  // Pipeline integrity: every stage has an agent, every input is produced
+  // upstream — or by onboarding, which sits outside the pipeline entirely.
+  const produced = new Set(ONBOARDING_ARTIFACTS);
   for (const s of DEFAULT_PIPELINE.stages) {
     const agent = registry.agentsById[s.agent];
     if (!agent) { problems.push(`stage "${s.id}" references missing agent "${s.agent}"`); continue; }

@@ -19,7 +19,18 @@ import {
   runStatus,
   readArtifact,
   openGates,
-  getStage
+  getStage,
+  onboardingStatus,
+  writeOnboardingArtifact,
+  readOnboardingArtifact,
+  setOnboardingStatus,
+  outputContract,
+  renderBundle,
+  ONBOARDING_ARTIFACTS,
+  ONBOARDING_STATUS,
+  checkOnboardingArtifact,
+  resolveProjects,
+  readJson
 } from '@hermit/core';
 
 const paths = layout(workspaceRoot());
@@ -270,6 +281,86 @@ const tools = [
         firstStage: stage?.id,
         firstAgent: agent,
         message: `Run ${run.id} created. Call hermit_next_task to receive the ${agent} brief.`
+      };
+    }
+  },
+  {
+    name: 'hermit_onboarding_task',
+    title: 'Onboarding brief',
+    description:
+      'The project onboarding brief. Onboarding is not a pipeline stage — it maps the repository ' +
+      'once and every run reads the result. Call this only when asked to onboard the project.',
+    input: {},
+    handler: () => {
+      const state = onboardingStatus(paths);
+      const agent = registry().agentsById.onboarding;
+      if (!agent) return { error: 'No onboarding agent is installed in this workspace.' };
+
+      if (state.complete) {
+        return {
+          status: state.status,
+          complete: true,
+          artifacts: state.present,
+          message:
+            'This repository is already onboarded. Re-run only if the codebase has drifted ' +
+            'materially; submitting again overwrites the existing map.'
+        };
+      }
+
+      const contract = {
+        outputs: ONBOARDING_ARTIFACTS.map((id) => ({ id, required: true })),
+        exitCriteria: []
+      };
+      return {
+        status: state.status,
+        complete: false,
+        missing: state.missing,
+        agent: { id: agent.id, name: agent.name, role: agent.role },
+        playbook: agent.playbook,
+        contract,
+        message:
+          `Produce ${state.missing.join(', ')} and submit each with hermit_submit_onboarding. ` +
+          'There is no stage and no gate; when all three exist onboarding is complete.'
+      };
+    }
+  },
+  {
+    name: 'hermit_submit_onboarding',
+    title: 'Submit onboarding artifact',
+    description:
+      'Record one onboarding artifact for the repository. These live outside any run, in ' +
+      '.hermit/onboarding/, because onboarding is mapped once and read by every run.',
+    input: {
+      artifact: z.enum(['project-context', 'codebase-map', 'glossary']),
+      content: z.string().describe('The full markdown body'),
+      agent: z.string().optional()
+    },
+    handler: ({ artifact, content, agent }) => {
+      // Same discipline as a stage handoff: refuse structurally incomplete work
+      // with the reason, rather than storing it and surprising the next reader.
+      const monorepo = resolveProjects(paths.root, readJson(paths.config, {})).monorepo;
+      const check = checkOnboardingArtifact(artifact, content, { monorepo });
+      if (!check.ok) {
+        return {
+          submitted: null,
+          accepted: false,
+          failed: check.failed,
+          message:
+            `Refused — ${check.failed.length} check(s) not met:\n` +
+            check.failed.map((f) => `  - ${f.id}: ${f.detail}`).join('\n')
+        };
+      }
+      const meta = writeOnboardingArtifact(paths, artifact, content, agent ?? 'onboarding');
+      const state = onboardingStatus(paths);
+      return {
+        submitted: artifact,
+        sha256: meta.sha256,
+        bytes: meta.bytes,
+        complete: state.complete,
+        missing: state.missing,
+        message: state.complete
+          ? 'Onboarding complete. Every run in this repository now reads these three documents.'
+          : `Recorded. Still missing: ${state.missing.join(', ')}.`
       };
     }
   }
