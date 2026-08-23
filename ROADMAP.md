@@ -50,7 +50,7 @@ An agent expert in **Python**, **Go**, and **Java Spring Boot** development.
 - Coordinates with documentation agent for API specs
 
 **As built:**
-- `packages/agents/agents/backend-developer.md`, with three skill packs: `backend-python`, `backend-go`, `backend-java-spring`
+- `packages/agents/agents/backend-developer.md`, with four skill packs: `backend-python`, `backend-go`, `backend-java-spring`, `backend-node`
 - Claims the implementation stage through a `specializes` block in its frontmatter, matched against the stacks and kinds a run touches. No config; no match leaves `implementer` in place
 - A flat single-service repo is classified from its root, so routing works without a monorepo layout
 - `architecture-spec` now requires `## Backend Design` (server-side work) and `## Frontend Design` (interface work), each conditional on the run

@@ -34,7 +34,7 @@ Implementation is two stages, and you are the default for both:
 | Stage | Produces | Specialist that takes it instead |
 |---|---|---|
 | `implementation_ui` — interface | `change-set-ui` | `ui-developer`, for React and Angular |
-| `implementation_backend` — services | `change-set` | `backend-developer`, for Python, Go and JVM |
+| `implementation_backend` — services | `change-set` | `backend-developer`, for Python, Go, JVM and Node |
 
 If you are reading this brief, no specialist matched and the work is yours. Your brief names the stage; produce that stage's artifact and no other.
 
