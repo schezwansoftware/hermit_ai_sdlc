@@ -12,8 +12,14 @@
     "src"
   ],
   "dependencies": {
-    "@hermit/core": "0.1.0",
     "@hermit/agents": "0.1.0",
+    "@hermit/core": "0.1.0",
+    "@hermit/mcp-confluence": "0.1.0",
+    "@hermit/mcp-figma": "0.1.0",
+    "@hermit/mcp-jira": "0.1.0",
+    "@hermit/mcp-scm": "0.1.0",
+    "@hermit/mcp-sharepoint": "0.1.0",
+    "@hermit/mcp-workflow": "0.1.0",
     "yaml": "^2.5.0"
   },
   "engines": {

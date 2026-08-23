@@ -20,7 +20,7 @@ export const HARNESSES = {
     id: 'copilot',
     name: 'GitHub Copilot',
     surfaces: 'VS Code · Copilot CLI · JetBrains',
-    files({ registry, config, pipeline, layoutInfo }) {
+    files({ registry, config, pipeline, layoutInfo, root }) {
       return [
         ...registry.agents.map((agent) => compileCopilotAgent(agent, { registry, pipeline })),
         compileCopilotInstructions({ registry, pipeline }),
@@ -30,9 +30,9 @@ export const HARNESSES = {
         compileAgentsMd({ registry, pipeline }),
         ...compileInstructions(),
         ...compileProjectInstructions(layoutInfo),
-        compileVsCodeMcp(config),
-        compileCliMcp(config),
-        compileIntellijSetup(config)
+        compileVsCodeMcp(config, { root }),
+        compileCliMcp(config, { root }),
+        compileIntellijSetup(config, { root })
       ];
     }
   },

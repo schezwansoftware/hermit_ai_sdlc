@@ -192,6 +192,31 @@ Backed by 24 skill packs and 2 knowledge packs. All markdown, all in `.hermit/`,
 
 **One SCM server, four providers.** `scm_create_pull_request` behaves the same on all four; the adapter absorbs the differences (GitLab calls it a merge request; CodeCommit needs SigV4 rather than a token). Agent playbooks never name a vendor.
 
+The six servers install with the CLI, and `hermit init` writes the path it resolved them at into your host's MCP config. `hermit doctor` verifies each one is reachable — a server whose entry point is missing never starts, and your host reports nothing when that happens, so this is the check worth running before you blame an agent.
+
+---
+
+## Running from a clone
+
+You do not have to install a package. Clone the repository, link it, and the result is identical — `hermit init` resolves the servers inside your checkout and writes those paths instead.
+
+```bash
+git clone git@github.com:schezwansoftware/hermit_ai_sdlc.git ~/src/hermit
+cd ~/src/hermit && npm install          # symlinks all ten workspace packages
+cd packages/cli && npm link             # puts `hermit` on your PATH
+
+cd ~/my-project
+npm link @hermit/cli
+npx hermit init --harness claude        # npm link runs no postinstall
+npx hermit doctor                       # every server: ready, or needs <VAR>
+```
+
+Link the **CLI package**, not the repository root — the root is a private workspace container and carries no binary. Linking `@hermit/cli` is enough on its own: the six servers are resolved through it, not linked one by one.
+
+Because those paths point into your clone, they are specific to your machine — git-ignore the MCP config, or have the rest of the team install normally. If the servers later appear in the workspace's own `node_modules`, the next `hermit sync` goes back to relative paths by itself. Editing an agent in the clone needs `npx hermit sync` in your project and a host restart; there is no build step.
+
+→ [Full instructions](INSTALL.md#installing-from-a-clone)
+
 ---
 
 ## Two harnesses, one pipeline definition

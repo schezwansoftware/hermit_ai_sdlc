@@ -1,8 +1,8 @@
 import YAML from 'yaml';
 import { DEFAULT_PIPELINE, SERVERS, groupToolsByServer, effectiveMcpTools } from '@hermit/core';
 import { enabledServers } from './mcp.js';
+import { resolveServerEntry } from './resolve.js';
 
-const NM = 'node_modules';
 const PREFIX = 'hermit';
 
 export const agentFileName = (id) => `${PREFIX}-${id}`;
@@ -230,16 +230,20 @@ export function compileSkills({ registry }) {
  * No `HERMIT_WORKSPACE` here, deliberately. Claude Code expands `${VAR}` from
  * the environment but has no project-directory variable, and it launches
  * servers with the project root as cwd — which is exactly what the server's own
- * upward walk for `.hermit/` needs. A hardcoded absolute path would break the
- * moment the repository is cloned somewhere else.
+ * upward walk for `.hermit/` needs.
+ *
+ * The script path is resolved rather than assumed. Claude Code reads this file
+ * once at startup and a server whose entry point is missing simply never
+ * appears — no error in the transcript, just an orchestrator with no ledger to
+ * ask. See `resolveServerEntry` for the order it tries.
  */
-export function compileMcpJson(config) {
+export function compileMcpJson(config, { root } = {}) {
   const mcpServers = {};
   for (const def of enabledServers(config)) {
     const env = Object.fromEntries(def.env.map((e) => [e.name, `\${${e.name}}`]));
     mcpServers[def.id] = {
       command: 'node',
-      args: [`${NM}/${def.package}/src/index.js`],
+      args: [resolveServerEntry(root, def).script],
       ...(Object.keys(env).length ? { env } : {})
     };
   }
@@ -316,7 +320,7 @@ process.stdin.on('end', () => {
 }
 
 /** Everything the Claude Code harness generates. */
-export function claudeFiles({ registry, config, pipeline, layoutInfo }) {
+export function claudeFiles({ registry, config, pipeline, layoutInfo, root }) {
   return [
     // No orchestrator subagent: CLAUDE.md makes the main session the orchestrator,
     // and generating one as well would contradict that — a subagent that cannot
@@ -328,7 +332,7 @@ export function claudeFiles({ registry, config, pipeline, layoutInfo }) {
       .map((agent) => compileAgent(agent, { registry, pipeline })),
     ...compileSkills({ registry }),
     compileClaudeMd({ registry, pipeline }),
-    compileMcpJson(config),
+    compileMcpJson(config, { root }),
     compileSettings({ registry }),
     compileGateHook(),
     ...compileProjectSkills(layoutInfo)

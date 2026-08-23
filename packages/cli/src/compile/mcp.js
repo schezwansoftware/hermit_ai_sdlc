@@ -1,9 +1,8 @@
 import { SERVERS } from '@hermit/core';
+import { resolveServerEntry } from './resolve.js';
 
 /** Every server id Hermit may write, enabled or not — see mergeJsonKey. */
 const OWNED = Object.keys(SERVERS);
-
-const NM = 'node_modules';
 
 /**
  * The three Copilot surfaces read MCP config from three different places in two
@@ -13,15 +12,16 @@ const NM = 'node_modules';
  *   Copilot CLI   .copilot/mcp-config.json  { mcpServers: { … } }, type "local"
  *   IntelliJ      configured through the IDE UI — we emit setup instructions
  */
-function serverEntry(def, { style }) {
-  const script = `${NM}/${def.package}/src/index.js`;
+function serverEntry(def, { style, root }) {
+  const { script, absolute } = resolveServerEntry(root, def);
   const env = Object.fromEntries(def.env.map((e) => [e.name, `\${env:${e.name}}`]));
 
   if (style === 'vscode') {
     return {
       type: 'stdio',
       command: 'node',
-      args: [`\${workspaceFolder}/${script}`],
+      // An absolute path is already anchored; prefixing it would produce nonsense.
+      args: [absolute ? script : `\${workspaceFolder}/${script}`],
       cwd: '${workspaceFolder}',
       env: { HERMIT_WORKSPACE: '${workspaceFolder}', ...env }
     };
@@ -42,22 +42,22 @@ export function enabledServers(config) {
   return ids.filter((id) => SERVERS[id]).map((id) => SERVERS[id]);
 }
 
-export function compileVsCodeMcp(config) {
+export function compileVsCodeMcp(config, { root } = {}) {
   const servers = {};
-  for (const def of enabledServers(config)) servers[def.id] = serverEntry(def, { style: 'vscode' });
+  for (const def of enabledServers(config)) servers[def.id] = serverEntry(def, { style: 'vscode', root });
   return { path: '.vscode/mcp.json', content: JSON.stringify({ servers }, null, 2) + '\n', merge: 'servers', owns: OWNED };
 }
 
-export function compileCliMcp(config) {
+export function compileCliMcp(config, { root } = {}) {
   const mcpServers = {};
-  for (const def of enabledServers(config)) mcpServers[def.id] = serverEntry(def, { style: 'cli' });
+  for (const def of enabledServers(config)) mcpServers[def.id] = serverEntry(def, { style: 'cli', root });
   return { path: '.copilot/mcp-config.json', content: JSON.stringify({ mcpServers }, null, 2) + '\n', merge: 'mcpServers', owns: OWNED };
 }
 
-export function compileIntellijSetup(config) {
+export function compileIntellijSetup(config, { root } = {}) {
   const servers = enabledServers(config);
   const rows = servers
-    .map((s) => `| \`${s.id}\` | \`node\` | \`${NM}/${s.package}/src/index.js\` | ${s.env.map((e) => `\`${e.name}\``).join(', ') || '—'} |`)
+    .map((s) => `| \`${s.id}\` | \`node\` | \`${resolveServerEntry(root, s).script}\` | ${s.env.map((e) => `\`${e.name}\``).join(', ') || '—'} |`)
     .join('\n');
 
   const content = `# Hermit in JetBrains IDEs (IntelliJ IDEA)
@@ -81,7 +81,8 @@ IntelliJ does not load per-agent files. This is why Hermit serves every playbook
 
 1. Install the GitHub Copilot plugin and sign in.
 2. Open **Settings → Tools → GitHub Copilot → Model Context Protocol (MCP)**.
-3. Add each server below. Paths are relative to the project root.
+3. Add each server below. A relative path is from the project root; an absolute
+   one means Hermit is linked from a checkout rather than installed here.
 
 | Server | Command | Arguments | Environment |
 |---|---|---|---|
