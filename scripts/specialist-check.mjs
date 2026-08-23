@@ -73,9 +73,12 @@ for (const [ids, expBackend, expUi, why] of [
   [['services-billing'], 'backend-developer', 'implementer', 'a Go service'],
   [['services-ledger'], 'backend-developer', 'implementer', 'a Python service'],
   [['services-payments'], 'backend-developer', 'implementer', 'a Spring Boot service'],
-  [['services-api'], 'implementer', 'implementer', 'a Node backend has no specialist'],
+  [['services-api'], 'backend-developer', 'implementer', 'an Express service'],
   [['apps-web'], 'implementer', 'ui-developer', 'a React app'],
-  [['services-billing', 'apps-web'], 'backend-developer', 'ui-developer', 'full stack: one specialist per stage']
+  [['services-billing', 'apps-web'], 'backend-developer', 'ui-developer', 'full stack: one specialist per stage'],
+  // Routing narrows, it does not strand: infra matches no specialist's `kind`,
+  // so the catch-all stage keeps the pipeline's own agent.
+  [['infra'], 'implementer', 'implementer', 'infrastructure matches no specialist']
 ]) {
   const r = routeFor(ids);
   assert.equal(r.backend, expBackend, `${ids.join('+')} services stage → ${expBackend} (${why})`);

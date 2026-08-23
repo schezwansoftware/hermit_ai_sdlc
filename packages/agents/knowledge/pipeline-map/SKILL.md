@@ -32,7 +32,7 @@ Shared reference for every agent. You own one box; this shows you the rest so yo
 
 **The interface is implemented before the services.** Stage 7 builds against the contract in `## Interfaces`, not against running code, and records anything the contract failed to promise under `## Contract Gaps`. Stage 8 reads that section first.
 
-¹ **A specialist may take either implementation stage.** `ui-developer` takes stage 7 for frontend and mobile projects; `backend-developer` takes stage 8 for Python, Go and JVM projects. Same stage, same inputs and outputs, same gate. The pipeline picks from the stacks recorded when the run started; no match leaves `implementer` in place. `hermit status` names whoever actually ran it.
+¹ **A specialist may take either implementation stage.** `ui-developer` takes stage 7 for frontend and mobile projects; `backend-developer` takes stage 8 for Python, Go, JVM and Node projects. Same stage, same inputs and outputs, same gate. The pipeline picks from the stacks recorded when the run started; no match leaves `implementer` in place. `hermit status` names whoever actually ran it.
 
 Stages 3–5 and 7 are skipped when nothing in scope has a user interface, or the run carries the `no-ui` flag. Stage 8 is skipped only when the run is *nothing but* interface work — it is also the catch-all for infrastructure, libraries and anything unclassified.
 
