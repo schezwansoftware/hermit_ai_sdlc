@@ -99,7 +99,7 @@ specializes:
 
 | Stage | Default | Specialist |
 |---|---|---|
-| `implementation_ui` | `implementer` | `ui-developer` — React, Angular |
+| `implementation_ui` | `implementer` | `ui-developer` — React, Angular, Flutter |
 | `implementation_backend` | `implementer` | `backend-developer` — Python, Go, JVM, Node |
 
 Nothing to configure: the stacks come from the project scan already done at `hermit start`, and a flat single-service repository is classified from its root. Because implementation is two stages, a full-stack run engages **both** specialists — one per stage — rather than one of them doing the other's job.
@@ -165,13 +165,13 @@ Hermit also emits `.github/instructions/project-<id>.instructions.md` scoped wit
 | `architect` | architecture | user flow, architecture spec, ADRs, impact analysis |
 | `planner` | planning | work plan, tracker subtasks |
 | `implementer` | implementation_ui · implementation_backend | the code, tests, change set |
-| `ui-developer` | implementation_ui *(react · angular)* | the interface, tests, change set |
+| `ui-developer` | implementation_ui *(react · angular · flutter)* | the interface, tests, change set |
 | `backend-developer` | implementation_backend *(python · go · jvm · node)* | the services, tests, change set |
 | `reviewer` | review | review report |
 | `qa` | qa | test plan, test report |
 | `documenter` | documentation | updated docs, staleness audit |
 
-Backed by 25 skill packs and 2 knowledge packs. All markdown, all in `.hermit/`, all yours to edit — then `hermit sync`.
+Backed by 26 skill packs and 2 knowledge packs. All markdown, all in `.hermit/`, all yours to edit — then `hermit sync`.
 
 **Start by replacing `knowledge/engineering-standards`** with your team's real standards. It is injected into every agent's context and is the cheapest way to make all ten behave like your team rather than a generic one.
 
@@ -306,7 +306,7 @@ npm run check:gates -- <workspace>  # gate enforcement across the MCP boundary
 ```
 packages/
   core/            state machine, gates, context scoping, project detection
-  agents/          12 agents · 25 skills · 2 knowledge packs (markdown)
+  agents/          12 agents · 26 skills · 2 knowledge packs (markdown)
   cli/             hermit CLI and the host compiler
   mcp-shared/      server bootstrap, HTTP client, config
   mcp-workflow/    the ledger

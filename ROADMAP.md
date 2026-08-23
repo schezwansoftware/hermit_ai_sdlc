@@ -4,7 +4,7 @@
 
 ### 1. Hermit UI Developer Agent — **shipped**
 
-An agent expert in **Angular** and **React** development.
+An agent expert in **Angular**, **React** and **Flutter** development.
 
 **Scope:**
 - Component architecture and best practices for both frameworks
@@ -21,7 +21,7 @@ An agent expert in **Angular** and **React** development.
 - Routes to appropriate skill packs based on detected framework
 
 **As built:**
-- `packages/agents/agents/ui-developer.md`, with `frontend-react` and `frontend-angular` skill packs
+- `packages/agents/agents/ui-developer.md`, with `frontend-react`, `frontend-angular` and `frontend-flutter` skill packs — the last added once a real mobile framework needed covering, since `kind: mobile` already routed there but with no ecosystem guidance to draw on
 - **The pipeline was reordered.** Architecture now runs *before* the UX stages: the architect settles the user flow, services and contracts, and the designer draws screens against a ratified system. `architecture-spec` gained a required `## User Flow` section; the architect no longer reads `ux-hifi`, and the UX designer now reads `architecture-spec`
 - **Implementation split into two stages** — `implementation_ui` then `implementation_backend` — which is what resolved the mixed-stack problem below: a full-stack run engages both specialists, one per stage, instead of one agent doing the other's job
 - The interface is built first, against the published contract rather than running code, and reports `## Contract Gaps` in `change-set-ui` for the services stage to close
@@ -140,11 +140,18 @@ Only item 3, and it is narrower than written above — language detection alread
 ships, because routing needed it.
 
 **Done:** the language and kind of every project in scope (`python`, `go`, `jvm`,
-`node`; `frontend`, `backend`, `batch`, `infra`, …), recorded on the run and driving
-which agent takes each implementation stage.
+`node`, `flutter`; `frontend`, `backend`, `batch`, `infra`, `mobile`, …), recorded on
+the run and driving which agent takes each implementation stage.
 
 **Remaining:** detecting the *framework within* a language — Django vs FastAPI vs
 Flask, Gin vs Echo, React vs Angular — and loading only the packs that apply. Today
-`ui-developer` carries both React and Angular guidance regardless of which the project
-uses, and `backend-developer` carries all three languages. That is wasted context and
-diluted focus, which is the failure the one-pack-per-technology split was meant to avoid.
+`ui-developer` carries React, Angular and Flutter guidance regardless of which the
+project uses, and `backend-developer` carries all four languages. That is wasted
+context and diluted focus, which is the failure the one-pack-per-technology split
+was meant to avoid.
+
+Flutter is the one case this is already partly solvable for: unlike React and
+Angular, which both sit under the generic `node` stack and are indistinguishable
+without dependency inspection, Flutter has its own detectable stack (`pubspec.yaml`).
+A future pass could route a `stack: [flutter]` project to a Flutter-only skill set
+immediately, without waiting for the harder React/Angular/backend-framework split.

@@ -119,7 +119,7 @@ To pick up changes you make in the clone, run `npx hermit sync` in your project 
 ```
 .hermit/                          ← yours to edit; survives sync and upgrades
   agents/          12 agent definitions
-  skills/          25 skill packs
+  skills/          26 skill packs
   knowledge/       2 knowledge packs (edit engineering-standards first)
   config.json      harness, servers, SCM provider, write permissions, projects
   hooks/           generated guards (Claude Code harness)
@@ -426,7 +426,7 @@ Implementation is **two stages** — the interface first, then the services behi
 
 | Stage | Runs when | Default | Specialist |
 |---|---|---|---|
-| `implementation_ui` | anything in scope has an interface | `implementer` | `ui-developer` — React, Angular |
+| `implementation_ui` | anything in scope has an interface | `implementer` | `ui-developer` — React, Angular, Flutter |
 | `implementation_backend` | the run is not *purely* interface work | `implementer` | `backend-developer` — Python, Go, Java/Spring Boot, Node.js |
 
 There is nothing to configure. The stacks come from the same project scan `hermit projects` prints, and a flat single-service repository is classified from its root. If no specialist matches, the pipeline's own agent runs — a specialist can narrow a stage, never leave it unstaffed.
