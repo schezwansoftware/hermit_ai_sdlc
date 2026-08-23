@@ -12,30 +12,31 @@ Shared reference for every agent. You own one box; this shows you the rest so yo
 
 | # | Stage | Agent | Gate | Consumes | Produces |
 |---|---|---|---|---|---|
-| 1 | `onboard` | onboarding | auto | — | `project-context`, `codebase-map`, `glossary` |
-| 2 | `requirements` | analyst | **human** | `project-context`, `glossary` | `requirements-spec`, `acceptance-criteria` |
-| 3 | `architecture` | architect | **human** | `requirements-spec`, `acceptance-criteria`, `codebase-map`, `project-context` | `architecture-spec`, `adr`, `impact-analysis` |
-| 4 | `ux_lofi` | ux-designer | **human** | `requirements-spec`, `acceptance-criteria`, `architecture-spec`, `project-context` | `ux-lofi` |
-| 5 | `ux_midfi` | ux-designer | **human** | `ux-lofi`, `requirements-spec`, `architecture-spec` | `ux-midfi` |
-| 6 | `ux_hifi` | ux-designer | **human** | `ux-midfi`, `requirements-spec`, `architecture-spec` | `ux-hifi`, `design-tokens` |
-| 7 | `planning` | planner | auto | `architecture-spec`, `acceptance-criteria`, `impact-analysis`, `ux-hifi` | `work-plan` |
-| 8 | `implementation_ui` | implementer¹ | auto | `work-plan`, `architecture-spec`, `acceptance-criteria`, `ux-hifi`, `design-tokens` | `change-set-ui` |
-| 9 | `implementation_backend` | implementer¹ | auto | `work-plan`, `architecture-spec`, `acceptance-criteria`, `change-set-ui` | `change-set` |
-| 10 | `review` | reviewer | **human** | `change-set`, `change-set-ui`, `architecture-spec`, `acceptance-criteria`, `work-plan` | `review-report` |
-| 11 | `qa` | qa | auto | `change-set`, `change-set-ui`, `acceptance-criteria`, `review-report` | `test-plan`, `test-report` |
-| 12 | `documentation` | documenter | auto | `change-set`, `change-set-ui`, `requirements-spec`, `architecture-spec`, `adr`, `test-report`, `project-context` | `docs-update` |
-| 13 | `delivery` | orchestrator | **human** | `change-set`, `change-set-ui`, `review-report`, `test-report`, `requirements-spec`, `docs-update` | `release-notes` |
-| 14 | `pull_request` | orchestrator | auto | `release-notes`, `change-set`, `change-set-ui`, `review-report`, `test-report`, `docs-update` | `pull-request` |
+| 1 | `requirements` | analyst | **human** | `project-context`, `glossary` | `requirements-spec`, `acceptance-criteria` |
+| 2 | `architecture` | architect | **human** | `requirements-spec`, `acceptance-criteria`, `codebase-map`, `project-context` | `architecture-spec`, `adr`, `impact-analysis` |
+| 3 | `ux_lofi` | ux-designer | **human** | `requirements-spec`, `acceptance-criteria`, `architecture-spec`, `project-context` | `ux-lofi` |
+| 4 | `ux_midfi` | ux-designer | **human** | `ux-lofi`, `requirements-spec`, `architecture-spec` | `ux-midfi` |
+| 5 | `ux_hifi` | ux-designer | **human** | `ux-midfi`, `requirements-spec`, `architecture-spec` | `ux-hifi`, `design-tokens` |
+| 6 | `planning` | planner | auto | `architecture-spec`, `acceptance-criteria`, `impact-analysis`, `ux-hifi` | `work-plan` |
+| 7 | `implementation_ui` | implementer¹ | auto | `work-plan`, `architecture-spec`, `acceptance-criteria`, `ux-hifi`, `design-tokens` | `change-set-ui` |
+| 8 | `implementation_backend` | implementer¹ | auto | `work-plan`, `architecture-spec`, `acceptance-criteria`, `change-set-ui` | `change-set` |
+| 9 | `review` | reviewer | **human** | `change-set`, `change-set-ui`, `architecture-spec`, `acceptance-criteria`, `work-plan` | `review-report` |
+| 10 | `qa` | qa | auto | `change-set`, `change-set-ui`, `acceptance-criteria`, `review-report` | `test-plan`, `test-report` |
+| 11 | `documentation` | documenter | auto | `change-set`, `change-set-ui`, `requirements-spec`, `architecture-spec`, `adr`, `test-report`, `project-context` | `docs-update` |
+| 12 | `delivery` | orchestrator | **human** | `change-set`, `change-set-ui`, `review-report`, `test-report`, `requirements-spec`, `docs-update` | `release-notes` |
+| 13 | `pull_request` | orchestrator | auto | `release-notes`, `change-set`, `change-set-ui`, `review-report`, `test-report`, `docs-update` | `pull-request` |
+
+**Onboarding is not a stage.** `project-context`, `codebase-map` and `glossary` are mapped once for the repository by `hermit onboard`, stored in `.hermit/onboarding/`, and read by every run. Mapping a codebase is expensive and the answer barely changes between runs, so paying for it per run was a tax with no return. It is also opt-in — `hermit init` asks — so a run may legitimately have none of them: say which inputs are missing and work from the repository directly.
 
 **Architecture precedes UX.** The architect settles the user flow, the services and the contracts; the designer draws screens against a ratified system. So `architecture-spec` must carry `## User Flow` whenever the work has an interface, and the architect never sees the designs — they do not exist yet.
 
-**The interface is implemented before the services.** Stage 8 builds against the contract in `## Interfaces`, not against running code, and records anything the contract failed to promise under `## Contract Gaps`. Stage 9 reads that section first.
+**The interface is implemented before the services.** Stage 7 builds against the contract in `## Interfaces`, not against running code, and records anything the contract failed to promise under `## Contract Gaps`. Stage 8 reads that section first.
 
-¹ **A specialist may take either implementation stage.** `ui-developer` takes stage 8 for frontend and mobile projects; `backend-developer` takes stage 9 for Python, Go and JVM projects. Same stage, same inputs and outputs, same gate. The pipeline picks from the stacks recorded when the run started; nothing to configure, and no match leaves `implementer` in place. `hermit status` names whoever actually ran it.
+¹ **A specialist may take either implementation stage.** `ui-developer` takes stage 7 for frontend and mobile projects; `backend-developer` takes stage 8 for Python, Go and JVM projects. Same stage, same inputs and outputs, same gate. The pipeline picks from the stacks recorded when the run started; no match leaves `implementer` in place. `hermit status` names whoever actually ran it.
 
-Stages 4–6 and 8 are skipped when nothing in scope has a user interface, or the run carries the `no-ui` flag. Stage 9 is skipped only when the run is *nothing but* interface work — it is also the catch-all for infrastructure, libraries and anything unclassified.
+Stages 3–5 and 7 are skipped when nothing in scope has a user interface, or the run carries the `no-ui` flag. Stage 8 is skipped only when the run is *nothing but* interface work — it is also the catch-all for infrastructure, libraries and anything unclassified.
 
-**Stage 14 runs only after stage 13's human gate approves.** A pull request notifies the team, so it is an outward-facing act that deliberately follows sign-off rather than preceding it.
+**Stage 13 runs only after stage 12's human gate approves.** A pull request notifies the team, so it is an outward-facing act that deliberately follows sign-off rather than preceding it.
 
 ## The traceability chain
 

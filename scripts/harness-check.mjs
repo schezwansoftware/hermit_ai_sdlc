@@ -12,8 +12,8 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { layout, loadRegistry, effectiveMcpTools, DEFAULT_PIPELINE } from '@hermit/core';
-import { compileAll, orphanedFiles } from '../packages/cli/src/compile/index.js';
+import { layout, loadRegistry, effectiveMcpTools, readJson, DEFAULT_PIPELINE } from '@hermit/core';
+import { compileAll, orphanedFiles, pruneOrphans } from '../packages/cli/src/compile/index.js';
 import { HARNESSES, resolveHarnesses } from '../packages/cli/src/compile/harnesses.js';
 
 const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
@@ -47,21 +47,27 @@ const paths = (files) => files.map((f) => f.path);
 const body = (files, p) => files.find((f) => f.path === p).content;
 
 for (const [name, files, expected, forbidden] of [
-  ['copilot', copilot, ['.github/copilot-instructions.md', '.vscode/mcp.json', '.copilot/mcp-config.json'], ['CLAUDE.md', '.mcp.json']],
-  ['claude', claude, ['CLAUDE.md', '.mcp.json', '.claude/settings.json', '.hermit/hooks/guard-gate.mjs'], ['.github/copilot-instructions.md', '.vscode/mcp.json']]
+  ['copilot', copilot,
+   ['.github/copilot-instructions.md', '.vscode/mcp.json', '.copilot/mcp-config.json', 'AGENTS.md'],
+   ['CLAUDE.md', '.mcp.json', '.claude/settings.json']],
+  ['claude', claude,
+   ['CLAUDE.md', '.mcp.json', '.claude/settings.json', '.hermit/hooks/guard-gate.mjs'],
+   ['.github/copilot-instructions.md', '.vscode/mcp.json', '.copilot/mcp-config.json', 'AGENTS.md']]
 ]) {
   for (const p of expected) assert.ok(paths(files).includes(p), `${name} must emit ${p}`);
   for (const p of forbidden) assert.ok(!paths(files).includes(p), `${name} must not emit ${p}`);
 }
 console.log('  ✓ each harness emits only its own host\'s files');
 
-// AGENTS.md is the portable baseline both hosts read. Emitted once, or two
-// writers race for one path and the last one wins silently.
-for (const [name, files] of [['copilot', copilot], ['claude', claude], ['both', both]]) {
-  assert.equal(paths(files).filter((p) => p === 'AGENTS.md').length, 1, `${name}: AGENTS.md emitted exactly once`);
-}
+// Nothing is shared between harnesses, so a workspace never holds config for a
+// host it did not enable. AGENTS.md belongs to Copilot; Claude Code has CLAUDE.md
+// and a second always-on file would just duplicate it on every turn.
+assert.equal(paths(both).filter((p) => p === 'AGENTS.md').length, 1, 'AGENTS.md emitted exactly once with both on');
 assert.equal(new Set(paths(both)).size, paths(both).length, 'enabling both harnesses must not collide on any path');
-console.log('  ✓ AGENTS.md emitted once; enabling both collides on nothing');
+
+const shared = paths(copilot).filter((p) => paths(claude).includes(p));
+assert.deepEqual(shared, [], `no file may belong to both harnesses, found: ${shared.join(', ')}`);
+console.log('  ✓ the two harnesses share no output path at all');
 
 // --- One agent file per agent, on both harnesses ----------------------------
 
@@ -206,10 +212,36 @@ const manifest = { files: Object.fromEntries(paths(both).map((p) => [p, 'x'])) }
 const orphans = orphanedFiles(manifest, claude);
 assert.ok(orphans.includes('.github/copilot-instructions.md'), 'dropping copilot must report its files');
 assert.ok(orphans.includes('.vscode/mcp.json'));
-assert.ok(!orphans.includes('AGENTS.md'), 'a file the remaining harness still owns is not orphaned');
-assert.ok(!orphans.includes('CLAUDE.md'));
+assert.ok(orphans.includes('AGENTS.md'), 'AGENTS.md is Copilot\'s, so dropping copilot orphans it too');
+assert.ok(!orphans.includes('CLAUDE.md'), 'a file the remaining harness still owns is not orphaned');
+assert.ok(!orphans.includes('.mcp.json'));
 assert.deepEqual(orphanedFiles({ files: {} }, claude), [], 'a first install orphans nothing');
 console.log(`  ✓ switching harness reports ${orphans.length} files it no longer maintains`);
+
+// Reporting is not enough — a claude-only workspace must not keep Copilot's
+// files lying in it. But a file someone edited is theirs, not ours to discard.
+const sw = fs.mkdtempSync(path.join(os.tmpdir(), 'hermit-switch-'));
+const swManifest = path.join(sw, 'manifest.json');
+writeFiles(sw, build(['copilot']), { manifestFile: swManifest });
+assert.ok(fs.existsSync(path.join(sw, 'AGENTS.md')));
+assert.ok(fs.existsSync(path.join(sw, '.github/copilot-instructions.md')));
+
+// One file the user edited after Hermit wrote it.
+fs.writeFileSync(path.join(sw, 'AGENTS.md'), '# mine now\n');
+
+const claudeFileSet = build(['claude']);
+writeFiles(sw, claudeFileSet, { manifestFile: swManifest });
+const swept = pruneOrphans(sw, orphanedFiles(readJson(swManifest, { files: {} }), claudeFileSet), { manifestFile: swManifest });
+
+assert.ok(!fs.existsSync(path.join(sw, '.github/copilot-instructions.md')), 'an untouched Copilot file must be removed');
+assert.ok(!fs.existsSync(path.join(sw, '.github')), 'the directory it emptied goes too');
+assert.ok(fs.existsSync(path.join(sw, 'AGENTS.md')), 'a file the user edited must be kept');
+assert.ok(swept.kept.includes('AGENTS.md'), 'and reported as kept');
+assert.equal(fs.readFileSync(path.join(sw, 'AGENTS.md'), 'utf8'), '# mine now\n', 'their edit is intact');
+assert.ok(fs.existsSync(path.join(sw, 'CLAUDE.md')), 'the new harness is installed');
+console.log(`  ✓ switching prunes ${swept.removed.length} untouched files and keeps the ${swept.kept.length} you edited`);
+
+fs.rmSync(sw, { recursive: true, force: true });
 
 fs.rmSync(root, { recursive: true, force: true });
 console.log('\nHARNESS COMPILATION VERIFIED');

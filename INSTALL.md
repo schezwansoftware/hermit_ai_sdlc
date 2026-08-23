@@ -7,6 +7,7 @@ It targets **GitHub Copilot** by default and **Claude Code** with `--harness cla
 - [Requirements](#requirements)
 - [Install](#install)
 - [Choosing a harness](#choosing-a-harness)
+- [Project onboarding](#project-onboarding)
 - [Configure credentials](#configure-credentials)
 - [Wire up each Copilot surface](#wire-up-each-copilot-surface)
 - [Monorepos](#monorepos)
@@ -70,11 +71,11 @@ The choice is written to `.hermit/config.json`, so `npx hermit sync` never needs
   knowledge/       2 knowledge packs (edit engineering-standards first)
   config.json      harness, servers, SCM provider, write permissions, projects
   hooks/           generated guards (Claude Code harness)
+  onboarding/      the codebase map — one per repo, shared by every run
   runs/            run state and artifacts (git-ignored by default)
 
-AGENTS.md                         portable baseline — read by both harnesses
-
 # harness: copilot
+AGENTS.md                         portable baseline for the Copilot CLI
 .github/
   copilot-instructions.md         always-on, all three surfaces
   agents/*.agent.md               compiled — do not edit by hand
@@ -110,7 +111,7 @@ A **harness** is a host that reads agent definitions. Everything in `.hermit/` i
 | | `copilot` (default) | `claude` |
 |---|---|---|
 | Always-on instructions | `.github/copilot-instructions.md` | `CLAUDE.md` |
-| Portable baseline | `AGENTS.md` | `AGENTS.md` |
+| Portable baseline | `AGENTS.md` | — (`CLAUDE.md` covers it) |
 | Agent definitions | `.github/agents/*.agent.md` | `.claude/agents/*.md` |
 | Skills & knowledge | inlined into each agent file | `.claude/skills/*/SKILL.md` |
 | MCP config | `.vscode/mcp.json`, `.copilot/mcp-config.json` | `.mcp.json` |
@@ -118,7 +119,7 @@ A **harness** is a host that reads agent definitions. Everything in `.hermit/` i
 | Write scope | described in the brief | **enforced** by `.claude/settings.json` |
 | Gate approval from a shell | described | **blocked** by a `PreToolUse` hook |
 
-Enabling both is supported and costs nothing — the output paths do not overlap, so a team split across editors shares one pipeline definition.
+Enabling both is supported and costs nothing — the output paths do not overlap, so a team split across editors shares one pipeline definition. Enabling one puts **nothing** belonging to the other in your workspace.
 
 **A harness changes the format, not the scope.** An agent entitled to three MCP tools under one is entitled to exactly those three under the other, and a read-only role gets no editing tools on either.
 
@@ -129,11 +130,7 @@ npx hermit init --harness claude    # switch
 npx hermit doctor                   # confirms which is active
 ```
 
-Files the previous harness wrote are **reported, not deleted** — Hermit stops maintaining them and tells you which they are. Delete them once you are sure nothing else reads them:
-
-```bash
-rm -rf .github/agents .github/instructions .copilot .vscode/mcp.json
-```
+Files the previous harness wrote are **removed**, so a Claude Code workspace holds nothing Copilot-shaped and vice versa. Only files still byte-identical to what Hermit last wrote are deleted — anything you edited is kept and reported, because switching harness is not consent to discard your work.
 
 ### Claude Code specifics
 
@@ -146,6 +143,37 @@ rm -rf .github/agents .github/instructions .copilot .vscode/mcp.json
 Hermit owns `.claude/settings.json` outright rather than merging into it, because a partial merge would keep whichever hooks block was already on disk and silently drop the gate guard. If you edit it by hand, the next sync skips it and says so.
 
 **Restart Claude Code after install** so it picks up `.mcp.json`, and approve the servers when prompted.
+
+---
+
+## Project onboarding
+
+Onboarding maps your codebase into three documents — `project-context`, `codebase-map` and `glossary` — that later stages read for stack, module boundaries, conventions and domain vocabulary.
+
+It is **not a pipeline stage**. It is mapped once for the repository, stored in `.hermit/onboarding/`, and read by every run. Doing it per run meant paying repeatedly for an answer that barely changes.
+
+It is also **opt-in**, because reading a codebase costs real tokens and that cost is yours. `hermit init` asks:
+
+```
+  Project onboarding
+  Maps your codebase into three documents every run then reads: stack,
+  module boundaries, conventions and a domain glossary. It is done once.
+  It reads a lot of source, so it will consume tokens.
+
+  Set up project onboarding now? (y/n)
+```
+
+Anything but `y` declines, and the answer is remembered — you are not asked again on every sync. Answer ahead of time with `--onboard` or `--no-onboard`; a non-interactive install is never prompted.
+
+```bash
+npx hermit onboard              # get the brief, hand it to your agent
+npx hermit onboard --status     # which of the three exist
+npx hermit onboard --force      # re-map after the codebase drifts
+```
+
+Hermit does not run the agent — it prepares the brief. Your agent calls `hermit_onboarding_task`, follows the playbook, and submits each document with `hermit_submit_onboarding`.
+
+**Declining is a real option.** Runs proceed without it and name the inputs they are missing; the agents read the repository directly instead. Onboarding buys consistency across runs, not capability.
 
 ---
 
@@ -429,7 +457,7 @@ Nothing an agent can do approves a gate — there is no such tool on the MCP sur
 
 **Doctor reports generated files were edited.** You changed a compiled file by hand. Move the change into `.hermit/` where it survives, or `hermit sync --force` to discard it.
 
-**A project was classified wrong.** Declare it explicitly under `projects` in `.hermit/config.json`, then `hermit sync`.
+**A project was classified wrong, or was not found.** Detection needs evidence that something is *built* in a directory — a manifest, a build file, a Dockerfile, a `.tf`. A directory carrying one is a project whatever it is called, so `shop-web/` and `payments-api/` are found as readily as `frontend/` and `backend/`; a conventionally-named directory also qualifies on source files alone. If a project is still missed or mislabelled, declare it under `projects` in `.hermit/config.json`, then `hermit sync`. `hermit projects` shows what was found.
 
 **The wrong agent took the implementation stage.** Routing follows the `kind` and `stack` of the projects in scope — check `hermit projects` first, since a misclassified project is the usual cause. Declaring the project correctly in `.hermit/config.json` fixes both. Scope is frozen when the run starts, so correct it and start a new run.
 

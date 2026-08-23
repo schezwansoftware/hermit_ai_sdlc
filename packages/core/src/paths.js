@@ -38,6 +38,10 @@ export function layout(root = findWorkspaceRoot()) {
     knowledgeDir: path.join(hermit, 'knowledge'),
     pipelinesDir: path.join(hermit, 'pipelines'),
     runsDir: path.join(hermit, 'runs'),
+    // Onboarding belongs to the repository, not to any one run: it is mapped
+    // once and every run reads it.
+    onboardingDir: path.join(hermit, 'onboarding'),
+    onboardingFile: path.join(hermit, 'onboarding', 'onboarding.json'),
     activeRunFile: path.join(hermit, 'active-run'),
     manifestFile: path.join(hermit, 'install-manifest.json'),
     runDir: (runId) => path.join(hermit, 'runs', runId),

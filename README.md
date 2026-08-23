@@ -15,24 +15,27 @@ That is the whole setup. → [Install guide](INSTALL.md) · [Concepts](docs/01-c
 ## The pipeline
 
 ```
- 1  onboard                 onboarding    ·  project context, codebase map, glossary
- 2  requirements            analyst       ⏸  spec + acceptance criteria
- 3  architecture            architect     ⏸  user flow, services, contracts, ADRs
- 4  ux_lofi                 ux-designer   ⏸  structure and flow          ┐
- 5  ux_midfi                ux-designer   ⏸  every screen × every state  ├ skipped when
- 6  ux_hifi                 ux-designer   ⏸  visual contract, tokens     ┘ nothing has a UI
- 7  planning                planner       ·  work packages
- 8  implementation_ui       implementer*  ·  the interface and its tests    (skipped: no UI)
- 9  implementation_backend  implementer*  ·  the services and their tests   (skipped: UI only)
-10  review                  reviewer      ⏸  review against the ratified design
-11  qa                      qa            ·  test plan, execution, result
-12  documentation           documenter    ·  update what the change invalidated
-13  delivery                orchestrator  ⏸  release notes, sign-off
-14  pull_request            orchestrator  ·  opens only after 13 is approved
+ ·  onboard                 onboarding    ·  once per repo, outside the pipeline — opt in
+
+ 1  requirements            analyst       ⏸  spec + acceptance criteria
+ 2  architecture            architect     ⏸  user flow, services, contracts, ADRs
+ 3  ux_lofi                 ux-designer   ⏸  structure and flow          ┐
+ 4  ux_midfi                ux-designer   ⏸  every screen × every state  ├ skipped when
+ 5  ux_hifi                 ux-designer   ⏸  visual contract, tokens     ┘ nothing has a UI
+ 6  planning                planner       ·  work packages
+ 7  implementation_ui       implementer*  ·  the interface and its tests    (skipped: no UI)
+ 8  implementation_backend  implementer*  ·  the services and their tests   (skipped: UI only)
+ 9  review                  reviewer      ⏸  review against the ratified design
+10  qa                      qa            ·  test plan, execution, result
+11  documentation           documenter    ·  update what the change invalidated
+12  delivery                orchestrator  ⏸  release notes, sign-off
+13  pull_request            orchestrator  ·  opens only after 12 is approved
 
                                           ⏸ = a human decides
                                           * a specialist may take this stage — see below
 ```
+
+**Onboarding is not a stage.** It maps the codebase into three documents every run then reads, so paying for it per run was a tax with no return. `hermit onboard` does it once, into `.hermit/onboarding/`. It costs real tokens, so `hermit init` asks rather than assuming — decline it and runs proceed, naming the inputs they are missing.
 
 **Architecture precedes UX.** The architect settles the user flow, the services and the contracts between them; the designer then draws screens against a ratified system, rather than the architect reverse-engineering a system from approved screens. The architect never sees the designs — they do not exist yet, which is why `## User Flow` and `## Interfaces` have to be complete enough to design from.
 
@@ -104,10 +107,10 @@ Nothing to configure: the stacks come from the project scan already done at `her
 Routing **narrows, never strands**. No match leaves the pipeline's own agent in place, so adding a specialist cannot leave a stage unstaffed. `hermit status` names whoever will actually run each stage, from the moment the run is created:
 
 ```
-  ·  7. planning               planner
-  ·  8. implementation_ui      ui-developer
-  ·  9. implementation_backend backend-developer
-  · 10. review                 reviewer           [human gate]
+  ·  6. planning               planner
+  ·  7. implementation_ui      ui-developer
+  ·  8. implementation_backend backend-developer
+  ·  9. review                 reviewer           [human gate]
 ```
 
 The services stage is also the **catch-all** — infrastructure, libraries and anything unclassified arrive there — so it stands down only when the run is nothing but interface work.
@@ -156,7 +159,7 @@ Hermit also emits `.github/instructions/project-<id>.instructions.md` scoped wit
 | Agent | Owns | Produces |
 |---|---|---|
 | `orchestrator` | routing · delivery · pull_request | release notes, the pull request |
-| `onboarding` | onboard | project context, codebase map, glossary |
+| `onboarding` | *outside the pipeline* | project context, codebase map, glossary |
 | `analyst` | requirements | requirements spec, acceptance criteria |
 | `ux-designer` | ux_lofi · ux_midfi · ux_hifi | wireframes, design spec, design tokens |
 | `architect` | architecture | user flow, architecture spec, ADRs, impact analysis |
@@ -243,6 +246,7 @@ Because IntelliJ loads no agent files, every playbook is **also** served over MC
 
 ```bash
 hermit init [--harness a,b]        # install into this workspace (copilot · claude)
+hermit onboard [--status]          # map the codebase — once per repo, opt-in
 hermit doctor                      # config, credentials, pipeline integrity
 hermit projects                    # what this repo contains and how it was classified
 

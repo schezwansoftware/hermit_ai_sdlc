@@ -11,7 +11,8 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import {
   layout, loadRegistry, DEFAULT_PIPELINE, createRun, loadRun, requireActiveRun,
-  nextTask, submitArtifact, requestHandoff, runStatus, decideGate, openGates, getStage, saveRun
+  nextTask, submitArtifact, requestHandoff, runStatus, decideGate, openGates, getStage, saveRun,
+  writeOnboardingArtifact, onboardingStatus, readArtifact, ONBOARDING_ARTIFACTS
 } from '@hermit/core';
 
 const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
@@ -28,9 +29,11 @@ const reg = loadRegistry(paths);
 console.log(`workspace: ${root}`);
 console.log(`agents: ${reg.agents.length}  skills: ${reg.skills.length}  knowledge: ${reg.knowledge.length}`);
 assert.equal(reg.agents.length, 12, 'expected 12 agents');
+assert.equal(DEFAULT_PIPELINE.stages.length, 13, 'expected 13 stages');
 
-// Every stage must resolve to a real agent, and every input must be produced upstream.
-const produced = new Set();
+// Every stage must resolve to a real agent, and every input must be produced
+// upstream — or by onboarding, which sits outside the pipeline entirely.
+const produced = new Set(ONBOARDING_ARTIFACTS);
 for (const s of DEFAULT_PIPELINE.stages) {
   const a = reg.agentsById[s.agent];
   assert.ok(a, `stage ${s.id} references missing agent ${s.agent}`);
@@ -71,24 +74,55 @@ for (const a of specialists) {
 }
 console.log(`✓ ${specialists.length} specialist(s) can produce every output of the stage they claim`);
 
+// Onboarding is not a stage. It is mapped once for the repository, before any
+// run, and every run reads it from outside its own artifact directory.
+assert.ok(!DEFAULT_PIPELINE.stages.some((s) => s.id === 'onboard'), 'onboard must not be a pipeline stage');
+assert.equal(reg.agentsById.onboarding.stages.length, 0, 'the onboarding agent owns no stage');
+
+let ob = onboardingStatus(paths);
+assert.equal(ob.complete, false);
+assert.deepEqual(ob.missing, ONBOARDING_ARTIFACTS);
+
 const run = createRun(paths, { title: 'Cart survives session expiry', intent: 'Preserve the cart when a session expires during checkout', jiraKey: 'PROJ-412', flags: [] });
 console.log(`✓ run created: ${run.id}`);
 
-// --- Stage 1: onboarding, with a deliberate premature handoff ---
-let r = loadRun(paths, run.id);
-let task = nextTask({ paths, run: r, registry: reg });
-assert.equal(task.state, 'task');
-assert.equal(task.agent.id, 'onboarding');
-assert.ok(task.rendered.includes('## Required output'), 'brief must state the output contract');
+// A run whose repository was never onboarded still starts, and says what is missing.
+let firstTask = nextTask({ paths, run: loadRun(paths, run.id), registry: reg });
+assert.equal(firstTask.state, 'task');
+assert.equal(firstTask.stage.id, 'requirements', 'requirements is now the first stage');
+assert.ok(firstTask.bundle.missingInputs.includes('project-context'), 'an un-onboarded run names its missing inputs');
+console.log('✓ un-onboarded run starts at requirements and reports its missing inputs');
 
-let refused = requestHandoff({ paths, run: r, registry: reg, agentId: 'onboarding' });
-assert.equal(refused.state, 'blocked', 'handoff with no artifacts must be refused');
-assert.ok(refused.message.includes('project-context'));
-console.log(`✓ premature handoff refused: ${refused.criteria.filter(c=>!c.ok).length} criteria failed`);
+// Now onboard the repository. Nothing is scoped to the run.
+const ONBOARDING = {
+  'project-context': '# Project Context\n\n## Purpose\nCheckout.\n\n## Tech Stack\n| Layer | Technology |\n|---|---|\n| API | Node |\n\n## Runtime Topology\nOne service.\n\n## External Dependencies\nStripe.\n\n## Conventions\nVitest.\n\n## Ownership\nPayments team.\n\n## Known Constraints\nPCI.\n\n## Confidence & Gaps\nNo ADRs found.\n',
+  'codebase-map': '# Codebase Map\n\n## Entry Points\nsrc/server.js\n\n## Module Boundaries\ncheckout\n\n## Data Model\nCart\n\n## Cross-Cutting Concerns\nauth\n\n## Test Topology\ntest/\n\n## Change Hotspots\nsrc/checkout.js\n',
+  glossary: '# Glossary\n\n- **Cart** → `CartAggregate`\n'
+};
+assert.throws(
+  () => writeOnboardingArtifact(paths, 'architecture-spec', 'x', 'onboarding'),
+  /not an onboarding artifact/,
+  'onboarding may only write its own three artifacts'
+);
+for (const [id, body] of Object.entries(ONBOARDING)) writeOnboardingArtifact(paths, id, body, 'onboarding');
+
+ob = onboardingStatus(paths);
+assert.equal(ob.complete, true, 'three artifacts completes onboarding');
+assert.deepEqual(ob.missing, []);
+console.log('✓ onboarding recorded once, outside every run');
+
+// Any run now reads them, including one created before onboarding happened.
+for (const id of ONBOARDING_ARTIFACTS) {
+  assert.ok(readArtifact(paths, run.id, id), `run must resolve ${id} from the repository onboarding`);
+}
+const otherRun = createRun(paths, { title: 'unrelated', intent: 'something else' });
+assert.ok(readArtifact(paths, otherRun.id, 'codebase-map'), 'a second run reads the same onboarding');
+console.log('✓ every run reads the shared onboarding, including runs that predate it');
 
 // Writing an artifact the stage does not own must be rejected.
+let r = loadRun(paths, run.id);
 assert.throws(
-  () => submitArtifact({ paths, run: r, registry: reg, artifactId: 'architecture-spec', content: 'x', agentId: 'onboarding' }),
+  () => submitArtifact({ paths, run: r, registry: reg, artifactId: 'architecture-spec', content: 'x', agentId: 'analyst' }),
   /does not produce/,
   'stage output contract must be enforced'
 );

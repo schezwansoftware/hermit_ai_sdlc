@@ -27,22 +27,35 @@ const call = async (name, args = {}) => {
   try { return JSON.parse(text); } catch { return text; }
 };
 
-// --- Onboarding agent does its stage over MCP ---
+// --- Onboarding happens outside the pipeline, over its own tools ---
 const ART = {
-  'project-context': '# Project Context\n\n## Purpose\nCheckout for Acme Shop.\n\n## Tech Stack\n| Layer | Tech |\n|---|---|\n| API | Node 22 |\n\n## Runtime Topology\nSingle service.\n\n## External Dependencies\nStripe.\n\n## Conventions\nVitest, conventional commits.\n\n## Ownership\nPayments team.\n\n## Known Constraints\nPCI-DSS scope.\n\n## Confidence & Gaps\nNo ADRs found in repo.\n',
-  'codebase-map': '# Codebase Map\n\n## Entry Points\nsrc/server.js\n\n## Module Boundaries\ncheckout, cart, auth\n\n## Data Model\nCart, Order\n\n## Cross-Cutting Concerns\nauth middleware\n\n## Test Topology\ntest/\n\n## Change Hotspots\nsrc/checkout.js (41 commits/yr)\n',
+  'project-context': '# Project Context\n\n## Purpose\nCheckout for Acme Shop.\n\n## Tech Stack\n| Layer | Tech |\n|---|---|\n| API | Node 22 |\n\n## Runtime Topology\nSingle service.\n\n## Confidence & Gaps\nNo ADRs found in repo.\n',
+  'codebase-map': '# Codebase Map\n\n## Entry Points\nsrc/server.js\n\n## Module Boundaries\ncheckout, cart, auth\n\n## Data Model\nCart, Order\n\n## Change Hotspots\nsrc/checkout.js\n',
   glossary: '# Glossary\n\n- **Cart** → `CartAggregate` in src/cart/aggregate.js\n'
 };
 
-for (const [id, content] of Object.entries(ART)) {
-  const r = await call('hermit_submit_artifact', { artifact: id, content, agent: 'onboarding' });
-  assert.ok(r.submitted === id, `submit failed for ${id}: ${JSON.stringify(r)}`);
-}
-console.log('  ✓ onboarding submitted 3 artifacts over MCP');
+const task = await call('hermit_onboarding_task', {});
+assert.equal(task.complete, false, 'a fresh workspace is not onboarded');
+assert.ok(task.playbook?.length, 'the onboarding brief carries its playbook');
 
-let h = await call('hermit_request_handoff', { agent: 'onboarding', summary: 'Mapped the checkout service.' });
-assert.equal(h.state, 'advanced', `expected advance, got: ${JSON.stringify(h)}`);
-console.log(`  ✓ auto-gated stage advanced: ${h.from} → ${h.to}`);
+// The submission check is enforced here too, not only at a stage handoff.
+const bad = await call('hermit_submit_onboarding', {
+  artifact: 'project-context', content: '# Context\n\nNo required sections.\n', agent: 'onboarding'
+});
+assert.equal(bad.accepted, false, 'a project-context with no ## Tech Stack must be refused');
+assert.ok(bad.failed.some((f) => f.id === 'stack-identified'));
+console.log('  ✓ onboarding submission refused for a missing required section');
+
+for (const [id, content] of Object.entries(ART)) {
+  const r = await call('hermit_submit_onboarding', { artifact: id, content, agent: 'onboarding' });
+  assert.equal(r.submitted, id, `submit failed for ${id}: ${JSON.stringify(r)}`);
+}
+const done = await call('hermit_onboarding_task', {});
+assert.equal(done.complete, true, 'three artifacts completes onboarding');
+console.log('  ✓ onboarding submitted 3 artifacts over MCP, outside any run');
+
+const st0 = await call('hermit_status');
+assert.equal(st0.currentStage, 'requirements', 'requirements is the first stage');
 
 // --- Analyst reaches a HUMAN gate ---
 await call('hermit_submit_artifact', {
@@ -53,7 +66,7 @@ await call('hermit_submit_artifact', {
   artifact: 'acceptance-criteria', agent: 'analyst',
   content: '# Acceptance Criteria\n\n## AC-1 — FR-1 — cart preserved\n**Given** an authenticated user with an expired session\n**When** they submit the checkout form\n**Then** they are redirected to sign-in and the cart is preserved\n\n**Verified by**: integration test\n'
 });
-h = await call('hermit_request_handoff', { agent: 'analyst', summary: 'Specified PROJ-412.' });
+const h = await call('hermit_request_handoff', { agent: 'analyst', summary: 'Specified PROJ-412.' });
 assert.equal(h.state, 'awaiting_gate', `expected gate, got ${JSON.stringify(h)}`);
 const gateId = h.gate.id;
 console.log(`  ✓ human-gated stage halted: gate ${gateId}`);

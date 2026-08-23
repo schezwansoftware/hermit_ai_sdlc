@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
   cmdInit, cmdSync, cmdStart, cmdStatus, cmdRuns, cmdNext,
-  cmdGate, cmdResume, cmdArtifacts, cmdJournal, cmdDoctor, cmdProjects
+  cmdGate, cmdResume, cmdArtifacts, cmdJournal, cmdDoctor, cmdProjects, cmdOnboard
 } from '../src/commands.js';
 
 const HELP = `
@@ -11,8 +11,10 @@ hermit — agentic SDLC pipeline for GitHub Copilot and Claude Code workspaces
     hermit init [--force]              install agents and host configs into this workspace
         --harness <a,b>                copilot (default) · claude — remembered after the first run
     hermit sync [--force]              recompile .hermit/ into your harness's formats
+        --onboard / --no-onboard       answer the onboarding prompt without being asked
     hermit doctor                      check configuration, credentials and pipeline integrity
     hermit projects                    list the projects in this repo and how they were classified
+    hermit onboard [--status]          map the codebase — once per repo, outside any run
 
   Runs
     hermit start "<intent>"            begin a run
@@ -72,6 +74,7 @@ if (!command || opts.help || command === 'help') {
 
 const commands = {
   init: () => cmdInit(opts),
+  onboard: () => cmdOnboard(opts),
   sync: () => cmdSync(opts),
   doctor: () => cmdDoctor(opts),
   projects: () => cmdProjects(opts),
