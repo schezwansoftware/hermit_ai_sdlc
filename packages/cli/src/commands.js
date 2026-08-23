@@ -14,6 +14,7 @@ import {
 } from '@hermit/core';
 import { compileAll, installPacks, writeFiles, orphanedFiles, pruneOrphans } from './compile/index.js';
 import { HARNESSES, resolveHarnesses } from './compile/harnesses.js';
+import { resolveServerEntry } from './compile/resolve.js';
 
 const c = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -81,7 +82,7 @@ export function cmdInit(opts) {
 
   const packs = installPacks(PACK_ROOT, p.hermit, { force: opts.force });
   const registry = loadRegistry(p);
-  const files = compileAll({ registry, config, layoutInfo, harnesses });
+  const files = compileAll({ registry, config, layoutInfo, harnesses, root: p.root });
   const orphans = orphanedFiles(readJson(p.manifestFile, { files: {} }), files);
   const result = writeFiles(p.root, files, { force: opts.force, manifestFile: p.manifestFile });
 
@@ -627,18 +628,39 @@ export function cmdDoctor(opts) {
     }
   }
 
-  // Credentials, per enabled server.
+  // Reachability and credentials, per enabled server.
+  //
+  // Reachability first, and as a *problem* rather than a warning: a server whose
+  // entry point is missing does not degrade, it never starts. The host reports
+  // no error an agent can see — the tools are simply absent — so this line is
+  // the only place anyone finds out before a run stalls with no ledger.
   const enabled = Array.isArray(config.servers) && config.servers.length ? config.servers : Object.keys(SERVERS);
   log('');
   log(c.bold('  Servers'));
+  let unreachable = 0;
   for (const id of enabled) {
     const def = SERVERS[id];
     if (!def) { warnings.push(`config enables unknown server "${id}"`); continue; }
     const missing = def.env.filter((e) => e.required && !process.env[e.name]);
-    const installed = fs.existsSync(path.join(p.root, 'node_modules', def.package));
-    const state = !installed ? c.yellow('not installed') : missing.length ? c.yellow(`needs ${missing.map((m) => m.name).join(', ')}`) : c.green('ready');
-    log(`    ${id.padEnd(12)} ${state}`);
+    const { absolute, found } = resolveServerEntry(p.root, def);
+
+    let state;
+    if (!found) {
+      state = c.red('not installed');
+      unreachable++;
+      problems.push(`${id}: ${def.package} is not installed — the host cannot start this server`);
+    } else if (missing.length) {
+      state = c.yellow(`needs ${missing.map((m) => m.name).join(', ')}`);
+    } else {
+      state = c.green('ready');
+    }
+    log(`    ${id.padEnd(12)} ${state}${found && absolute ? c.dim('  (linked from a Hermit checkout)') : ''}`);
     for (const m of missing) warnings.push(`${id}: ${m.name} is not set — ${m.hint}`);
+  }
+  if (unreachable) {
+    log('');
+    log(`  ${c.dim('Install the servers:')} ${c.cyan('npm i ' + enabled.map((id) => SERVERS[id]?.package).filter(Boolean).join(' '))}`);
+    log(`  ${c.dim('Working from a clone:')} ${c.cyan('npm link @hermit/cli')} ${c.dim('in this workspace, then')} ${c.cyan('npx hermit sync')}`);
   }
 
   // SCM provider sanity.

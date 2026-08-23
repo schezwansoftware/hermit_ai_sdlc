@@ -6,6 +6,7 @@ It targets **GitHub Copilot** by default and **Claude Code** with `--harness cla
 
 - [Requirements](#requirements)
 - [Install](#install)
+- [Installing from a clone](#installing-from-a-clone)
 - [Choosing a harness](#choosing-a-harness)
 - [Project onboarding](#project-onboarding)
 - [Configure credentials](#configure-credentials)
@@ -61,6 +62,57 @@ npx hermit init --harness copilot,claude
 ```
 
 The choice is written to `.hermit/config.json`, so `npx hermit sync` never needs the flag again.
+
+Installing the CLI brings the six MCP servers with it. They have to be on disk in your workspace, because the generated MCP configuration names a script for your host to spawn — see [Installing from a clone](#installing-from-a-clone) if you would rather not install from a registry at all.
+
+### Installing from a clone
+
+If you want to run Hermit from source — to change an agent, to work on Hermit itself, or simply to avoid installing a package — clone it and link it. The result is identical to a registry install, and `hermit sync` handles the difference for you.
+
+```bash
+git clone git@github.com:schezwansoftware/hermit_ai_sdlc.git ~/src/hermit
+```
+
+Install the monorepo's own dependencies, which symlinks all ten workspace packages into its `node_modules`. This step is what makes the MCP servers reachable later, so do not skip it:
+
+```bash
+cd ~/src/hermit && npm install
+```
+
+Put the `hermit` command on your PATH. Run this from `packages/cli`, not from the repository root — the root package is the private workspace container and linking it gives you no binary:
+
+```bash
+cd ~/src/hermit/packages/cli && npm link
+```
+
+Now link it into the repository you actually want to work in:
+
+```bash
+cd ~/my-project && npm link @hermit/cli
+```
+
+Then install as normal. `npm link` does not run the postinstall, so run `init` yourself:
+
+```bash
+npx hermit init --harness claude
+```
+
+`init` resolves each MCP server through the linked CLI and writes its **absolute path in your clone** into `.mcp.json` and `.vscode/mcp.json`. Nothing else is needed — you do not have to link the six server packages one by one.
+
+Confirm before starting your host. Every server should read `ready` or `needs <VAR>`; none should read `not installed`:
+
+```bash
+npx hermit doctor
+```
+
+Servers resolved from a clone are marked `(linked from a Hermit checkout)`. Finally, restart your host and approve the servers when it prompts — `.mcp.json` is read once at startup.
+
+Two consequences of the absolute path are worth knowing:
+
+- **It is machine-specific.** It names a directory that exists only on your machine, so it is not useful to a teammate. Either add `.mcp.json` to `.gitignore`, or have everyone install from the registry instead so the path stays relative.
+- **A workspace install wins.** If `node_modules/@hermit/mcp-workflow` later appears in the workspace, the next `hermit sync` switches back to the relative path on its own.
+
+To pick up changes you make in the clone, run `npx hermit sync` in your project and restart the host. Nothing is compiled, so there is no build step between editing Hermit and running it.
 
 ### What lands in your repository
 
@@ -443,9 +495,13 @@ Nothing an agent can do approves a gate — there is no such tool on the MCP sur
 
 ## Troubleshooting
 
-**MCP servers do not appear in VS Code.** Reload the window. Check `.vscode/mcp.json` exists and that `node_modules/@hermit/mcp-workflow/src/index.js` is present.
+**A server is missing, and nothing reported an error.** Run `npx hermit doctor` and read the `Servers` block. A server marked `not installed` is one whose entry point is not on disk: your host spawns `node`, the process dies before the handshake, and the tools are simply absent — there is no error message anywhere, and an agent asking for `hermit_status` finds no such tool. `doctor` prints the command that fixes it. This is the first thing to check whenever an agent says it cannot see the Hermit tools.
 
-**MCP servers do not appear in Claude Code.** Restart it — `.mcp.json` is read at startup — and approve the servers when prompted. Check `.mcp.json` exists and that you ran `init` with `--harness claude`; `hermit doctor` names the active harness.
+**MCP servers do not appear in VS Code.** Reload the window. Check `.vscode/mcp.json` exists, then run `npx hermit doctor` to confirm every server resolves.
+
+**MCP servers do not appear in Claude Code.** Restart it — `.mcp.json` is read at startup — and approve the servers when prompted. Check `.mcp.json` exists and that you ran `init` with `--harness claude`; `hermit doctor` names the active harness and confirms each server resolves.
+
+**`hermit` works but its MCP servers do not.** The CLI and the servers are separate packages. A linked CLI resolves its own dependencies from the checkout it points at, so `hermit start` and `hermit doctor` run perfectly while nothing has put the servers where your host is looking. Run `npx hermit sync` — it rewrites the MCP configs against wherever the servers actually are — then restart your host. If you installed by cloning, see [Installing from a clone](#installing-from-a-clone).
 
 **Claude Code blocked a gate command.** Working as designed: agents cannot decide gates. Run it yourself in a terminal.
 

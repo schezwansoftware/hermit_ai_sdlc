@@ -206,6 +206,52 @@ console.log('  ✓ disabling a server prunes it from the MCP config; a user\'s o
 
 fs.rmSync(wsRoot, { recursive: true, force: true });
 
+// --- Every generated server path points at a file that exists ---------------
+//
+// A server whose entry point is missing does not fail loudly: the host spawns
+// node, the process dies before the handshake, and the tools are simply absent.
+// The orchestrator then has no ledger to ask and the run cannot start. So the
+// generated configs are held to the standard of naming a real file.
+
+const entryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hermit-entry-'));
+
+const configs = compileAll({ registry, config: {}, layoutInfo, harnesses: ['copilot', 'claude'], root: entryRoot });
+const mcpJson = JSON.parse(configs.find((f) => f.path === '.mcp.json').content);
+const vscodeJson = JSON.parse(configs.find((f) => f.path === '.vscode/mcp.json').content);
+
+for (const [id, entry] of Object.entries(mcpJson.mcpServers)) {
+  assert.ok(fs.existsSync(entry.args[0]), `.mcp.json entry for "${id}" must exist on disk: ${entry.args[0]}`);
+}
+
+// The workspace has no node_modules, so resolution fell through to this
+// checkout and the paths are absolute. VS Code must not then prefix them.
+for (const [id, entry] of Object.entries(vscodeJson.servers)) {
+  const arg = entry.args[0];
+  assert.ok(!arg.startsWith('${workspaceFolder}'), `"${id}" is absolute; prefixing it would break the path`);
+  assert.ok(fs.existsSync(arg), `.vscode/mcp.json entry for "${id}" must exist on disk`);
+}
+
+// A server installed in the workspace wins, and stays relative — an absolute
+// path is machine-specific and must not be what a team commits.
+const nm = path.join(entryRoot, 'node_modules/@hermit/mcp-workflow/src');
+fs.mkdirSync(nm, { recursive: true });
+fs.writeFileSync(path.join(nm, 'index.js'), '// stub\n');
+
+const relocated = JSON.parse(
+  compileAll({ registry, config: {}, layoutInfo, harnesses: ['claude'], root: entryRoot })
+    .find((f) => f.path === '.mcp.json').content
+);
+assert.equal(
+  relocated.mcpServers.hermit.args[0],
+  'node_modules/@hermit/mcp-workflow/src/index.js',
+  'a workspace install must win over a linked checkout, and stay relative'
+);
+assert.ok(path.isAbsolute(relocated.mcpServers.jira.args[0]), 'servers not installed locally still resolve to the checkout');
+
+console.log('  ✓ every generated MCP path resolves to a real file; workspace installs stay relative');
+
+fs.rmSync(entryRoot, { recursive: true, force: true });
+
 // --- Switching harnesses reports what it stops owning -----------------------
 
 const manifest = { files: Object.fromEntries(paths(both).map((p) => [p, 'x'])) };

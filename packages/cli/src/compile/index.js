@@ -15,12 +15,12 @@ const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
  */
 export function compileAll({
   registry, config = {}, pipeline = DEFAULT_PIPELINE,
-  layoutInfo = { monorepo: false, projects: [] }, harnesses
+  layoutInfo = { monorepo: false, projects: [] }, harnesses, root = null
 }) {
   const ids = harnesses ?? resolveHarnesses(config);
   const files = [];
   for (const id of ids) {
-    files.push(...HARNESSES[id].files({ registry, config, pipeline, layoutInfo }));
+    files.push(...HARNESSES[id].files({ registry, config, pipeline, layoutInfo, root }));
   }
   return files;
 }
