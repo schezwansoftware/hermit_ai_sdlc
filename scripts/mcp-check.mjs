@@ -37,6 +37,17 @@ for (const [name, rel] of SERVERS) {
       const status = await client.callTool({ name: 'hermit_status', arguments: {} });
       const text = status.content[0].text;
       const parsed = JSON.parse(text);
+
+      // A workspace with no run yet is a normal state, not a broken server —
+      // it is what every freshly-installed workspace looks like. The handshake
+      // and the tool list are still proof the server came up; the rest of these
+      // assertions need a run to be about anything.
+      if (parsed.state === 'no_active_run') {
+        console.log('handshake ok · no run yet, skipping run-scoped checks');
+        await client.close();
+        continue;
+      }
+
       process.stdout.write(`status → stage "${parsed.currentStage}", ${parsed.stages.length} stages`);
 
       const denied = await client.callTool({
