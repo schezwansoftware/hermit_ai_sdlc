@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { journal } from './state.js';
 
 export const GATE_STATUS = /** @type {const} */ ({
@@ -11,12 +12,31 @@ export const GATE_STATUS = /** @type {const} */ ({
 export const DECISIONS = Object.freeze(['approve', 'changes_requested', 'reject']);
 
 /**
+ * Where a gate decision is allowed to come from.
+ *
+ * `cli` — a person, in their own terminal. Nothing an agent controls sits
+ * between the keystroke and the decision.
+ *
+ * `chat` — the orchestrator, over MCP, after a human confirms the call through
+ * the host's own permission prompt. That confirmation is the human decision;
+ * it is real but weaker than `cli`, because a host set to auto-approve MCP
+ * tools removes the prompt entirely. `hermit_decide_gate` is deliberately the
+ * only tool in this server marked destructive, so a host that treats that
+ * annotation as "always confirm" still does — but a workspace that has turned
+ * auto-approval on for the whole `hermit` server has turned this off too.
+ * Document that trade-off; do not pretend it away.
+ *
+ * Any other source is refused outright. There is no third path.
+ */
+export const GATE_SOURCES = Object.freeze(['cli', 'chat']);
+
+/**
  * Human-in-the-loop gate.
  *
- * Design rule: agents may READ gate state over MCP but can never write a
- * decision. `decideGate` refuses any source other than 'cli', which is the only
- * path a human actually drives. Without this the HITL requirement is decorative
- * — a model that can approve its own work will approve its own work.
+ * Design rule: agents may READ gate state over MCP. Deciding one requires a
+ * source in `GATE_SOURCES` — never the agent's own say-so. Without this the
+ * HITL requirement is decorative: a model that can approve its own work will
+ * approve its own work.
  */
 export function openGate(paths, run, stage, criteriaResults) {
   const existing = findOpenGate(run, stage.id);
@@ -56,12 +76,13 @@ export function getGate(run, gateId) {
 
 /**
  * @param {'approve'|'changes_requested'|'reject'} decision
- * @param {{ decidedBy:string, comment?:string, source:string }} opts
+ * @param {{ decidedBy:string, comment?:string, source:'cli'|'chat' }} opts
  */
 export function decideGate(paths, run, gateId, decision, { decidedBy, comment = null, source }) {
-  if (source !== 'cli') {
+  if (!GATE_SOURCES.includes(source)) {
     throw new Error(
-      `Gate decisions may only be made by a human through the Hermit CLI (got source="${source}"). ` +
+      `Gate decisions may only be made by a human, through the Hermit CLI or ` +
+        `the orchestrator's hermit_decide_gate tool (got source=${JSON.stringify(source)}). ` +
         `Run: hermit gate ${decision === 'approve' ? 'approve' : decision} ${gateId}`
     );
   }
@@ -72,6 +93,9 @@ export function decideGate(paths, run, gateId, decision, { decidedBy, comment = 
   if (!gate) throw new Error(`Gate "${gateId}" not found in run ${run.id}`);
   if (gate.status !== GATE_STATUS.OPEN) throw new Error(`Gate "${gateId}" is already ${gate.status}`);
   if (!decidedBy) throw new Error('A gate decision must record who made it (--by, or git user.name)');
+  if (decision !== 'approve' && !comment) {
+    throw new Error(`"${decision}" needs a reason so the agent knows what to fix.`);
+  }
 
   gate.status =
     decision === 'approve'
@@ -83,6 +107,7 @@ export function decideGate(paths, run, gateId, decision, { decidedBy, comment = 
   gate.decidedAt = new Date().toISOString();
   gate.decidedBy = decidedBy;
   gate.comment = comment;
+  gate.source = source;
 
   journal(paths, run.id, {
     event: 'gate.decided',
@@ -90,7 +115,26 @@ export function decideGate(paths, run, gateId, decision, { decidedBy, comment = 
     stage: gate.stageId,
     decision,
     decidedBy,
-    comment
+    comment,
+    source
   });
   return gate;
+}
+
+/**
+ * Who is deciding, when the caller did not say.
+ *
+ * Mirrors what the CLI has always done — git identity, then the OS user — so a
+ * decision made through chat is attributed the same way one made in a terminal
+ * is. Returns null rather than guessing; callers require a name.
+ */
+export function resolveDecider(root, provided = null) {
+  if (provided) return provided;
+  try {
+    const name = execFileSync('git', ['config', 'user.name'], { cwd: root, encoding: 'utf8' }).trim();
+    if (name) return name;
+  } catch {
+    /* no git, or user.name unset */
+  }
+  return process.env.USER || process.env.USERNAME || null;
 }

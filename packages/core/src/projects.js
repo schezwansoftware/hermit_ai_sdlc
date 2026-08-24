@@ -220,6 +220,7 @@ export function classifyProject(root, rel) {
   if (hasFile(/^(requirements\.txt|pyproject\.toml|setup\.py)$/)) stack.push('python');
   if (hasFile(/^(Gemfile)$/)) stack.push('ruby');
   if (hasFile(/\.csproj$/)) stack.push('dotnet');
+  if (hasFile(/^pubspec\.yaml$/)) stack.push('flutter');
 
   let kind = 'unknown';
   if (hasFile(/\.tf$/) || hasFile(/^(main\.tf|Chart\.yaml|Pulumi\.yaml|cdk\.json|skaffold\.yaml)$/) || /^(infra|infrastructure|deploy|terraform|k8s)$/.test(name)) {

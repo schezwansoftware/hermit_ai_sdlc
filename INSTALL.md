@@ -119,7 +119,7 @@ To pick up changes you make in the clone, run `npx hermit sync` in your project 
 ```
 .hermit/                          ← yours to edit; survives sync and upgrades
   agents/          12 agent definitions
-  skills/          25 skill packs
+  skills/          26 skill packs
   knowledge/       2 knowledge packs (edit engineering-standards first)
   config.json      harness, servers, SCM provider, write permissions, projects
   hooks/           generated guards (Claude Code harness)
@@ -175,6 +175,8 @@ Enabling both is supported and costs nothing — the output paths do not overlap
 
 **A harness changes the format, not the scope.** An agent entitled to three MCP tools under one is entitled to exactly those three under the other, and a read-only role gets no editing tools on either.
 
+**Gate decisions from chat work the same way on both.** The orchestrator can call `hermit_decide_gate` to relay a decision a human just gave it — approve, request changes, or reject — and either host asks them to confirm before it runs. No role agent has this tool on either harness; only the terminal and the orchestrator's own conversation can decide a gate at all.
+
 ### Switching harness
 
 ```bash
@@ -190,7 +192,7 @@ Files the previous harness wrote are **removed**, so a Claude Code workspace hol
 
 **Skills are loaded, not inlined.** Each pack becomes a real skill under `.claude/skills/hermit-<id>/`, read on demand rather than copied into every agent that references it.
 
-**Enforcement.** `.claude/settings.json` denies writes to `.hermit/runs/` (the audit trail) and to the generated agent files, and registers a hook that refuses `hermit gate approve|reject|changes` from Bash. That last one closes the only remaining route by which an agent could decide its own gate. Running it yourself in a terminal is unaffected — the hook only sees tool calls.
+**Enforcement.** `.claude/settings.json` denies writes to `.hermit/runs/` (the audit trail) and to the generated agent files, and registers a hook that refuses `hermit gate approve|reject|changes` from Bash. That closes the route by which an agent could type the CLI command itself. Running it yourself in a terminal is unaffected — the hook only sees tool calls. It does not, and cannot, touch `hermit_decide_gate` — that path is a deliberate MCP tool, gated by your confirmation instead of a hook, and it exists on Copilot too.
 
 Hermit owns `.claude/settings.json` outright rather than merging into it, because a partial merge would keep whichever hooks block was already on disk and silently drop the gate guard. If you edit it by hand, the next sync skips it and says so.
 
@@ -424,7 +426,7 @@ Implementation is **two stages** — the interface first, then the services behi
 
 | Stage | Runs when | Default | Specialist |
 |---|---|---|---|
-| `implementation_ui` | anything in scope has an interface | `implementer` | `ui-developer` — React, Angular |
+| `implementation_ui` | anything in scope has an interface | `implementer` | `ui-developer` — React, Angular, Flutter |
 | `implementation_backend` | the run is not *purely* interface work | `implementer` | `backend-developer` — Python, Go, Java/Spring Boot, Node.js |
 
 There is nothing to configure. The stacks come from the same project scan `hermit projects` prints, and a flat single-service repository is classified from its root. If no specialist matches, the pipeline's own agent runs — a specialist can narrow a stage, never leave it unstaffed.
@@ -477,7 +479,7 @@ npx hermit start "Preserve the cart when a session expires" --jira PROJ-412
 npx hermit status
 ```
 
-Then in VS Code, invoke `@hermit-orchestrator`. It reads `hermit_status`, dispatches the onboarding agent, and works down the pipeline.
+Then in VS Code, invoke `@hermit-orchestrator`. It reads `hermit_status` and works down the pipeline. (If you haven't onboarded the repository yet, see [Project onboarding](#project-onboarding) — it's optional and separate from a run.)
 
 At each of the seven human gates it stops and tells you the command:
 
@@ -489,7 +491,9 @@ npx hermit gate changes gate_architecture_7f3c -m "name the rollback path explic
 
 `changes` returns the stage to its agent with your comment attached to the next brief. Decisions are recorded against your `git config user.name`.
 
-Nothing an agent can do approves a gate — there is no such tool on the MCP surface.
+**Or decide from chat instead of a terminal.** Tell the orchestrator what you've decided — "approve it" or "send it back, the rollback path needs naming" — and it calls `hermit_decide_gate` to relay that. Your host will ask you to confirm before it runs; that confirmation is the decision Hermit records, not the orchestrator's own read of the work. Role agents never have this tool, and it only works from the orchestrator's own conversation.
+
+This path is real but weaker than the terminal one: it depends on your host actually pausing to ask. If you've set the `hermit` MCP server to auto-approve every call, that confirmation is gone and so is the guarantee — decide from the terminal instead if that's a risk you'd rather not take. The tool is the one deliberately marked destructive in this server, precisely so a host that treats that annotation as "always confirm" still does.
 
 ---
 
@@ -503,7 +507,11 @@ Nothing an agent can do approves a gate — there is no such tool on the MCP sur
 
 **`hermit` works but its MCP servers do not.** The CLI and the servers are separate packages. A linked CLI resolves its own dependencies from the checkout it points at, so `hermit start` and `hermit doctor` run perfectly while nothing has put the servers where your host is looking. Run `npx hermit sync` — it rewrites the MCP configs against wherever the servers actually are — then restart your host. If you installed by cloning, see [Installing from a clone](#installing-from-a-clone).
 
-**Claude Code blocked a gate command.** Working as designed: agents cannot decide gates. Run it yourself in a terminal.
+**Claude Code blocked a gate command.** Working as designed: `hermit gate approve|changes|reject` typed through Bash is refused, so an agent cannot type the CLI command itself. Run it yourself in a terminal, or tell the orchestrator what you've decided and let it call `hermit_decide_gate`.
+
+**"Only the orchestrator decides a gate."** A role agent (not the orchestrator) tried to call `hermit_decide_gate` and was refused, by design — no role agent has this tool. If you're talking to a role agent and a gate is open, ask the orchestrator instead; it's the one that relays your decision.
+
+**Your host didn't ask you to confirm a chat decision.** `hermit_decide_gate` is marked destructive specifically so a host pauses for confirmation, but a workspace where you've set the `hermit` server to auto-approve everything has switched that off. Decide from the terminal instead, or stop auto-approving that server.
 
 **`No active Hermit run`.** Start one with `hermit start`, or `hermit runs` to see existing ones — the active run is per-workspace.
 

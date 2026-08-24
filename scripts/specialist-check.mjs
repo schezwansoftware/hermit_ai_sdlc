@@ -35,10 +35,11 @@ function workspace(prefix) {
   return root;
 }
 
-// A polyglot repo: Go and Python services beside a React app and a Node API.
+// A polyglot repo: Go and Python services beside a React app, a Flutter app and a Node API.
 const root = workspace('hermit-spec-');
 fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'plat', private: true, workspaces: ['apps/*', 'services/*'] }));
 mk(root, 'apps/web', 'package.json', '{"name":"web","dependencies":{"react":"^18"}}');
+mk(root, 'apps/mobile', 'pubspec.yaml', "name: mobile\nenvironment:\n  sdk: '>=3.0.0 <4.0.0'\ndependencies:\n  flutter:\n    sdk: flutter\n");
 mk(root, 'services/api', 'package.json', '{"name":"api","dependencies":{"express":"^4"}}');
 mk(root, 'services/billing', 'go.mod', 'module acme/billing\n\ngo 1.22\n');
 mk(root, 'services/ledger', 'pyproject.toml', '[project]\nname = "ledger"\n');
@@ -56,7 +57,10 @@ for (const [id, stack] of [['services-billing', 'go'], ['services-ledger', 'pyth
 }
 assert.equal(projects.find((x) => x.id === 'infra')?.kind, 'infra', 'fixture needs a real infra project');
 assert.equal(projects.find((x) => x.id === 'apps-web')?.kind, 'frontend');
-console.log(`  ✓ detected ${projects.length} projects across go, python, jvm and node`);
+const mobile = projects.find((x) => x.id === 'apps-mobile');
+assert.equal(mobile?.kind, 'mobile', 'a pubspec.yaml alone must classify as mobile');
+assert.ok((mobile?.stack ?? []).includes('flutter'), `apps-mobile should carry stack flutter, got ${mobile?.stack}`);
+console.log(`  ✓ detected ${projects.length} projects across go, python, jvm, node and flutter`);
 
 // --- Routing: which agent takes stage 8 -------------------------------------
 
@@ -75,6 +79,7 @@ for (const [ids, expBackend, expUi, why] of [
   [['services-payments'], 'backend-developer', 'implementer', 'a Spring Boot service'],
   [['services-api'], 'backend-developer', 'implementer', 'an Express service'],
   [['apps-web'], 'implementer', 'ui-developer', 'a React app'],
+  [['apps-mobile'], 'implementer', 'ui-developer', 'a Flutter app'],
   [['services-billing', 'apps-web'], 'backend-developer', 'ui-developer', 'full stack: one specialist per stage'],
   // Routing narrows, it does not strand: infra matches no specialist's `kind`,
   // so the catch-all stage keeps the pipeline's own agent.
