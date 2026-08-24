@@ -2,7 +2,7 @@ import { DEFAULT_PIPELINE, getStage, stageIndex } from './pipeline.js';
 import { STAGE_STATUS, journal, saveRun } from './state.js';
 import { GATE_STATUS, findOpenGate, openGate } from './gates.js';
 import { evaluateAll } from './criteria.js';
-import { writeArtifact, listArtifacts } from './artifacts.js';
+import { writeArtifact, listArtifacts, readArtifact } from './artifacts.js';
 import { buildContextBundle, outputContract, renderBundle } from './context.js';
 import { resolveStageAgent } from './registry.js';
 
@@ -23,6 +23,55 @@ export function criteriaContext(run, pipeline = DEFAULT_PIPELINE) {
       (s) => s.skipWhen === 'no-ui' && run.stages?.[s.id]?.status !== STAGE_STATUS.SKIPPED
     )
   };
+}
+
+/**
+ * How many dependency fixes exist only in a major version.
+ *
+ * Read from the report rather than inferred from an empty section: an agent that
+ * writes "- none" under `## Needs Approval` would otherwise look identical to one
+ * that found two, and the difference decides whether a person is interrupted.
+ */
+export function majorUpgradeCount(paths, run) {
+  const content = readArtifact(paths, run.id, 'cve-report');
+  if (!content) return 0;
+  const m = content.match(/\*\*Major upgrades\*\*:\s*(\d+)/i);
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * Conditions that turn an `auto` stage into a gated one for this run.
+ *
+ * A stage declares `gateWhen: '<key>'`; the function here decides. Both current
+ * conditions exist for the same reason: the stage is about to do something
+ * outward-facing or hard to walk back, but only sometimes, and gating it
+ * unconditionally would interrupt every run that does not.
+ */
+export const GATE_CONDITIONS = {
+  /** Planning gates when this run will also open real tracker items from the plan. */
+  tracker: ({ run }) => Boolean(run.stages?.tracker) && run.stages.tracker.status !== STAGE_STATUS.SKIPPED,
+  /** Security gates when a fix requires a major version bump someone has to accept. */
+  'major-upgrades': ({ paths, run }) => majorUpgradeCount(paths, run) > 0
+};
+
+/** Does this stage need a human before the run advances past it? */
+export function stageNeedsGate(stage, { paths, run }) {
+  if (stage?.gate === 'hitl') return true;
+  const condition = stage?.gateWhen ? GATE_CONDITIONS[stage.gateWhen] : null;
+  return condition ? Boolean(condition({ paths, run })) : false;
+}
+
+/** Why a conditional gate opened, for the message the agent reads. */
+function gateReason(stage, { paths, run }) {
+  if (stage.gate === 'hitl') return null;
+  if (stage.gateWhen === 'tracker') {
+    return 'this run creates tracker items from the approved plan, so the plan is approved first';
+  }
+  if (stage.gateWhen === 'major-upgrades') {
+    const n = majorUpgradeCount(paths, run);
+    return `${n} vulnerability fix(es) exist only in a major version and need a person to accept the break risk`;
+  }
+  return null;
 }
 
 /**
@@ -191,9 +240,11 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
     journal(paths, run.id, { event: 'stage.summary', stage: stage.id, agent: agentId, summary });
   }
 
-  if (stage.gate === 'hitl') {
+  if (stageNeedsGate(stage, { paths, run })) {
     run.stages[stage.id].status = STAGE_STATUS.AWAITING_GATE;
     const gate = openGate(paths, run, stage, check.results);
+    const reason = gateReason(stage, { paths, run });
+    if (reason) gate.reason = reason;
     saveRun(paths, run);
     return {
       state: 'awaiting_gate',
@@ -201,6 +252,7 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
       gate,
       message:
         `Exit criteria passed. "${stage.title}" now requires human approval.\n` +
+        (reason ? `Why: ${reason}.\n` : '') +
         `Review artifacts: ${(stage.outputs ?? []).join(', ')}\n` +
         `A person must run:  hermit gate approve ${gate.id}   (or: hermit gate changes ${gate.id} -m "...")\n` +
         `Do not start the next stage and do not approve this yourself.`
@@ -242,9 +294,15 @@ export function runStatus({ paths, run, pipeline = DEFAULT_PIPELINE }) {
       id: s.id,
       title: s.title,
       agent: run.stages[s.id]?.agent ?? s.agent,
-      gate: s.gate,
+      // The gate this stage will actually open for this run — a conditional gate
+      // that is live shows as `hitl`, so status never promises an unattended
+      // stage that is about to stop and wait.
+      gate: stageNeedsGate(s, { paths, run }) ? 'hitl' : 'auto',
+      optIn: Boolean(s.optIn),
+      skippable: s.skippable !== false,
       status: run.stages[s.id]?.status ?? 'pending',
       attempts: run.stages[s.id]?.attempts ?? 0
-    }))
+    })),
+    directives: run.directives ?? []
   };
 }

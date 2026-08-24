@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { ARTIFACTS } from './pipeline.js';
 import { ensureDir } from './paths.js';
 import { isOnboardingArtifact, onboardingArtifactFile } from './onboarding.js';
+import { isSecurityArtifact, securityArtifactFile } from './security.js';
 
 export function artifactSpec(artifactId) {
   return ARTIFACTS[artifactId] ?? { format: 'md', title: artifactId, producer: null };
@@ -19,12 +20,13 @@ export function artifactExists(paths, runId, artifactId) {
 }
 
 /**
- * Read an artifact for a run, falling back to the repository's onboarding.
+ * Read an artifact for a run, falling back to the repository-level stores.
  *
  * Onboarding is mapped once for the whole repository rather than per run, so
- * `project-context`, `codebase-map` and `glossary` live outside any run. A run
- * that produced its own copy still wins — that keeps a re-onboarded repository
- * from rewriting history under a run already in flight.
+ * `project-context`, `codebase-map` and `glossary` live outside any run. The
+ * security baseline — `dependency-map` and `security-baseline` — works the same
+ * way. A run that produced its own copy still wins, which keeps a re-scanned
+ * repository from rewriting history under a run already in flight.
  */
 export function readArtifact(paths, runId, artifactId) {
   const file = artifactFile(paths, runId, artifactId);
@@ -32,6 +34,10 @@ export function readArtifact(paths, runId, artifactId) {
 
   if (isOnboardingArtifact(artifactId)) {
     const shared = onboardingArtifactFile(paths, artifactId);
+    if (fs.existsSync(shared)) return fs.readFileSync(shared, 'utf8');
+  }
+  if (isSecurityArtifact(artifactId)) {
+    const shared = securityArtifactFile(paths, artifactId);
     if (fs.existsSync(shared)) return fs.readFileSync(shared, 'utf8');
   }
   return null;
@@ -56,14 +62,23 @@ export function writeArtifact(paths, runId, artifactId, content, producedBy = nu
   };
 }
 
+function sharedIn(dir, belongs) {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => /\.(md|json|txt)$/.test(f))
+    .map((f) => f.replace(/\.(md|json|txt)$/, ''))
+    .filter(belongs);
+}
+
 export function listArtifacts(paths, runId) {
   const dir = paths.artifactsDir(runId);
   const own = fs.existsSync(dir) ? fs.readdirSync(dir).map((f) => f.replace(/\.(md|json|txt)$/, '')) : [];
-  const shared = fs.existsSync(paths.onboardingDir)
-    ? fs.readdirSync(paths.onboardingDir)
-        .filter((f) => /\.(md|json|txt)$/.test(f))
-        .map((f) => f.replace(/\.(md|json|txt)$/, ''))
-        .filter(isOnboardingArtifact)
-    : [];
-  return [...new Set([...own, ...shared])];
+  return [
+    ...new Set([
+      ...own,
+      ...sharedIn(paths.onboardingDir, isOnboardingArtifact),
+      ...sharedIn(paths.securityDir, isSecurityArtifact)
+    ])
+  ];
 }

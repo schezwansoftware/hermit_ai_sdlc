@@ -42,6 +42,10 @@ export function layout(root = findWorkspaceRoot()) {
     // once and every run reads it.
     onboardingDir: path.join(hermit, 'onboarding'),
     onboardingFile: path.join(hermit, 'onboarding', 'onboarding.json'),
+    // Same reasoning as onboarding: the dependency map and the code-scan
+    // baseline describe the repository, not any one run.
+    securityDir: path.join(hermit, 'security'),
+    securityFile: path.join(hermit, 'security', 'security.json'),
     activeRunFile: path.join(hermit, 'active-run'),
     manifestFile: path.join(hermit, 'install-manifest.json'),
     runDir: (runId) => path.join(hermit, 'runs', runId),

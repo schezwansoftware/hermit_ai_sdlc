@@ -16,12 +16,21 @@
  * the repository (`hermit onboard`) and every run reads the result. A run
  * whose repository was never onboarded proceeds and names the missing inputs.
  *
- * gate: 'hitl'  -> a human must approve via the CLI before the run advances
- * gate: 'auto'  -> advances as soon as exit criteria pass
+ * Two stages are off unless a run asks for them. `tracker` writes epics and
+ * stories into a real tracker and `security` changes dependency manifests —
+ * both are outward-facing enough that running them by default would be a
+ * surprise, and neither is needed by most changes.
+ *
+ * gate: 'hitl'      -> a human must approve via the CLI before the run advances
+ * gate: 'auto'      -> advances as soon as exit criteria pass
+ * gateWhen: <cond>  -> an 'auto' stage that becomes 'hitl' when the condition
+ *                      holds for this run (see GATE_CONDITIONS in engine.js)
+ * optIn: true       -> skipped unless the run explicitly turns it on
+ * skippable: false  -> a prompt or flag may never stand this stage down
  */
 export const DEFAULT_PIPELINE = {
   id: 'sdlc.default',
-  version: '3.0.0',
+  version: '4.0.0',
   name: 'End-to-end SDLC',
   stages: [
     {
@@ -29,6 +38,7 @@ export const DEFAULT_PIPELINE = {
       title: 'Requirements analysis',
       agent: 'analyst',
       gate: 'hitl',
+      skippable: false,
       inputs: ['project-context', 'glossary'],
       outputs: ['requirements-spec', 'acceptance-criteria'],
       exitCriteria: [
@@ -43,6 +53,7 @@ export const DEFAULT_PIPELINE = {
       title: 'Technical architecture',
       agent: 'architect',
       gate: 'hitl',
+      skippable: false,
       inputs: ['requirements-spec', 'acceptance-criteria', 'codebase-map', 'project-context'],
       outputs: ['architecture-spec', 'adr', 'impact-analysis'],
       exitCriteria: [
@@ -106,12 +117,40 @@ export const DEFAULT_PIPELINE = {
       title: 'Work breakdown',
       agent: 'planner',
       gate: 'auto',
+      // Becomes a human gate when the run also writes tracker items. Creating an
+      // epic notifies a team, so it follows a human decision the way opening a
+      // pull request follows delivery sign-off — the plan is what gets approved,
+      // and `tracker` then executes against an approved plan rather than asking
+      // for forgiveness afterwards.
+      gateWhen: 'tracker',
       inputs: ['architecture-spec', 'acceptance-criteria', 'impact-analysis', 'ux-hifi'],
       outputs: ['work-plan'],
       exitCriteria: [
         { id: 'plan-written', type: 'artifact_exists', artifact: 'work-plan' },
         { id: 'tasks-enumerated', type: 'min_list_items', artifact: 'work-plan', section: '## Work Packages', min: 1 },
         { id: 'packages-attributed', type: 'contains', artifact: 'work-plan', value: '## Project Sequencing', when: { monorepo: true } }
+      ]
+    },
+    {
+      // Off unless the run asks for it. Most work already has a ticket; the runs
+      // that need this are the ones that started as an idea rather than an issue.
+      //
+      // It executes rather than proposes — by the time it runs, a human has
+      // approved the work plan it derives from (see `gateWhen` on planning), so
+      // the epic and stories it opens carry a decision that was already made.
+      id: 'tracker',
+      title: 'Tracker items',
+      agent: 'story-writer',
+      gate: 'auto',
+      optional: true,
+      optIn: true,
+      inputs: ['work-plan', 'acceptance-criteria', 'requirements-spec', 'architecture-spec', 'impact-analysis'],
+      outputs: ['story-map'],
+      exitCriteria: [
+        { id: 'map-written', type: 'artifact_exists', artifact: 'story-map' },
+        { id: 'hierarchy-listed', type: 'min_list_items', artifact: 'story-map', section: '## Hierarchy', min: 1 },
+        { id: 'created-recorded', type: 'contains', artifact: 'story-map', value: '## Created' },
+        { id: 'coverage-stated', type: 'contains', artifact: 'story-map', value: '## Work Package Coverage' }
       ]
     },
     {
@@ -147,10 +186,39 @@ export const DEFAULT_PIPELINE = {
       ]
     },
     {
+      // Off unless the run asks for it, and placed before review on purpose: a
+      // dependency bump is a code change, so the reviewer should see it in the
+      // same pass as everything else rather than after sign-off.
+      //
+      // Patch and minor bumps are applied. A fix that only exists in a major
+      // version is not — it is counted in `**Major upgrades**`, and a non-zero
+      // count turns this stage's gate into a human one.
+      id: 'security',
+      title: 'Dependency and vulnerability scan',
+      agent: 'security',
+      gate: 'auto',
+      gateWhen: 'major-upgrades',
+      optional: true,
+      optIn: true,
+      inputs: ['change-set', 'change-set-ui', 'architecture-spec', 'dependency-map', 'security-baseline', 'project-context'],
+      outputs: ['cve-report'],
+      exitCriteria: [
+        { id: 'report-written', type: 'artifact_exists', artifact: 'cve-report' },
+        { id: 'findings-listed', type: 'contains', artifact: 'cve-report', value: '## Findings' },
+        { id: 'applied-listed', type: 'contains', artifact: 'cve-report', value: '## Applied' },
+        { id: 'approval-listed', type: 'contains', artifact: 'cve-report', value: '## Needs Approval' },
+        { id: 'residual-risk-stated', type: 'contains', artifact: 'cve-report', value: '## Residual Risk' },
+        // The count the gate condition reads. Stated as a number so no one has to
+        // infer "none" from an empty section.
+        { id: 'major-count-stated', type: 'matches', artifact: 'cve-report', pattern: '\\*\\*Major upgrades\\*\\*:\\s*\\d+', flags: 'i' }
+      ]
+    },
+    {
       id: 'review',
       title: 'Code review',
       agent: 'reviewer',
       gate: 'hitl',
+      skippable: false,
       inputs: ['change-set', 'change-set-ui', 'architecture-spec', 'acceptance-criteria', 'work-plan'],
       outputs: ['review-report'],
       exitCriteria: [
@@ -189,6 +257,7 @@ export const DEFAULT_PIPELINE = {
       title: 'Delivery sign-off',
       agent: 'orchestrator',
       gate: 'hitl',
+      skippable: false,
       inputs: ['change-set', 'change-set-ui', 'review-report', 'test-report', 'requirements-spec', 'docs-update'],
       outputs: ['release-notes'],
       exitCriteria: [
@@ -226,8 +295,13 @@ export const ARTIFACTS = {
   'ux-hifi': { format: 'md', title: 'High-fidelity design spec', producer: 'ux-designer' },
   'design-tokens': { format: 'json', title: 'Design tokens', producer: 'ux-designer' },
   'work-plan': { format: 'md', title: 'Work plan', producer: 'planner' },
+  'story-map': { format: 'md', title: 'Tracker item map', producer: 'story-writer' },
   'change-set-ui': { format: 'md', title: 'Change set summary — interface', producer: 'implementer' },
   'change-set': { format: 'md', title: 'Change set summary — services', producer: 'implementer' },
+  'cve-report': { format: 'md', title: 'Vulnerability report', producer: 'security' },
+  // Written once for the repository by `hermit security`, not per run.
+  'dependency-map': { format: 'md', title: 'Dependency map', producer: 'security' },
+  'security-baseline': { format: 'md', title: 'Security baseline', producer: 'security' },
   'review-report': { format: 'md', title: 'Code review report', producer: 'reviewer' },
   'test-plan': { format: 'md', title: 'Test plan', producer: 'qa' },
   'test-report': { format: 'md', title: 'Test report', producer: 'qa' },

@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 import {
   layout, loadRegistry, DEFAULT_PIPELINE, createRun, loadRun, requireActiveRun,
   nextTask, submitArtifact, requestHandoff, runStatus, decideGate, openGates, getStage, saveRun,
-  writeOnboardingArtifact, onboardingStatus, readArtifact, ONBOARDING_ARTIFACTS
+  writeOnboardingArtifact, onboardingStatus, readArtifact, ONBOARDING_ARTIFACTS,
+  SECURITY_ARTIFACTS
 } from '@hermit/core';
 
 const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
@@ -28,12 +29,13 @@ for (const d of ['agents', 'skills', 'knowledge']) {
 const reg = loadRegistry(paths);
 console.log(`workspace: ${root}`);
 console.log(`agents: ${reg.agents.length}  skills: ${reg.skills.length}  knowledge: ${reg.knowledge.length}`);
-assert.equal(reg.agents.length, 12, 'expected 12 agents');
-assert.equal(DEFAULT_PIPELINE.stages.length, 13, 'expected 13 stages');
+assert.equal(reg.agents.length, 14, 'expected 14 agents');
+assert.equal(DEFAULT_PIPELINE.stages.length, 15, 'expected 15 stages');
 
 // Every stage must resolve to a real agent, and every input must be produced
-// upstream — or by onboarding, which sits outside the pipeline entirely.
-const produced = new Set(ONBOARDING_ARTIFACTS);
+// upstream — or outside the pipeline entirely, by onboarding or by the
+// repository security baseline.
+const produced = new Set([...ONBOARDING_ARTIFACTS, ...SECURITY_ARTIFACTS]);
 for (const s of DEFAULT_PIPELINE.stages) {
   const a = reg.agentsById[s.agent];
   assert.ok(a, `stage ${s.id} references missing agent ${s.agent}`);

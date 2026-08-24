@@ -100,6 +100,9 @@ Enhance `hermit init` to intelligently detect the tech stack and enroll required
 - [x] Backend Developer Agent
 - [ ] Framework Detection & Auto-Enrollment
 - [x] Claude Code harness
+- [x] Run scope from the intent sentence
+- [x] Security agent
+- [x] Epic / story writer agent
 
 ---
 
@@ -115,6 +118,45 @@ Enhance `hermit init` to intelligently detect the tech stack and enroll required
 - The main session is the orchestrator — Claude Code has no `mode: primary` equivalent, and a subagent dispatching subagents fights the model
 - **Enforcement Copilot cannot express:** write-scope denials, and a `PreToolUse` hook refusing `hermit gate approve|reject|changes` from Bash. That closes the last route by which an agent could decide its own gate
 - Verified by `npm run check:harness` — eight properties, including that a harness changes format but never scope
+
+---
+
+### 5. Run scope from the intent sentence — **shipped**
+
+`hermit start "add cart persistence, skip the UX designs and don't open a PR"` should not need three more flags to say what the sentence already said.
+
+**As built:**
+- `packages/core/src/directives.js` — a fixed table of stage targets and aliases, matched against negation cues at word boundaries. **No model reads the intent**: the same sentence always produces the same run shape, and a reviewer can check any decision by reading the table
+- Clause-aware. A turn phrase (`but`, `and run`, `however`, …) ends a cue's reach, so "…don't open a PR, but run a security scan" is read as two instructions rather than one long refusal
+- Every decision records the phrase that caused it. `hermit start` prints it back and `hermit status` shows it beside the skipped stage, so a sentence the user did not mean to write is visible rather than mysterious
+- `--skip ux,pr` and `--with security,tracker` resolve through the same table, by target id, stage id or alias. An unknown name throws rather than silently doing nothing
+- **Four stages are locked**: requirements, architecture, review and delivery. Refused at two layers — the parser, and `createRun` itself, so a hand-built `skip` array or a direct `hermit_start_run` call is refused too. A gate a sentence can dissolve is not a gate
+- Scope is frozen at run creation. Nothing re-reads the intent, so an agent cannot rephrase its way into or out of a stage
+- Verified by `npm run check:scope`
+
+### 6. Security agent — **shipped**
+
+Two jobs on two different clocks, which is why it exists in two places.
+
+**As built:**
+- `packages/agents/agents/security.md`, with `dependency-hygiene` and `vulnerability-triage` skill packs
+- **Once per repository** — `hermit security` produces `dependency-map` and `security-baseline` into `.hermit/security/`, outside any run, the same shape as onboarding. `securityStatus` reports the baseline stale when a manifest is newer than the recorded map
+- **Once per run** — the opt-in `security` stage produces `cve-report`. Placed *before* review on purpose: a dependency bump is a code change, so the reviewer sees it in the same pass
+- Patch and minor upgrades are applied and verified against the suite. A fix that exists only in a **major** version never is — it is counted in `**Major upgrades**`, and a non-zero count opens a human gate
+- **New mechanism: `gateWhen`.** An `auto` stage that becomes `hitl` when a condition holds. The alternative — gating every security run — would interrupt the majority that have nothing to decide
+- The count is read from the report rather than inferred from an empty section, and a report that omits it fails its exit criteria rather than being assumed safe
+- **Write scope is manifests and lockfiles only.** A security pass structurally cannot become a refactor the reviewer was not expecting
+
+### 7. Epic / story writer agent — **shipped**
+
+**As built:**
+- `packages/agents/agents/story-writer.md`, with the `story-mapping` skill pack
+- Opt-in `tracker` stage after planning; produces `story-map` recording the hierarchy it opened, with real tracker keys
+- **Turning it on makes `planning` a human gate** (`gateWhen: 'tracker'`). Creating an epic notifies a team, so it follows a human decision — the same shape as the pull request following delivery sign-off. The stage then *executes* an approved plan rather than proposing and asking forgiveness
+- Searches before it creates. A duplicate epic is cleanup someone does by hand, and it is the most common damage this stage could do
+- Acceptance criteria are copied verbatim, never paraphrased — QA executes the ratified originals
+- Work the approved plan does not contain goes under `## Gaps`, not into the tracker
+- Writes no files: no `writes.paths`, so it gets no edit or execute tools in either harness
 
 ---
 

@@ -10,6 +10,8 @@ import {
   resolveProjects, detectProjects, hasUiProject,
   onboardingStatus, setOnboardingStatus, readOnboardingArtifact,
   ONBOARDING_ARTIFACTS, ONBOARDING_STATUS,
+  securityStatus, setSecurityStatus, SECURITY_ARTIFACTS, SECURITY_STATUS, MANIFEST_FILES,
+  parseDirectives, resolveTargets,
   nextTask, runStatus, decideGate, getGate, openGates, readArtifact, listArtifacts
 } from '@hermit/core';
 import { compileAll, installPacks, writeFiles, orphanedFiles, pruneOrphans } from './compile/index.js';
@@ -265,6 +267,84 @@ export function cmdOnboard(opts) {
   return state;
 }
 
+// ---------------------------------------------------------------- security
+
+/** Dependency manifests present at the repo root, for the staleness check. */
+function manifestPaths(p) {
+  return MANIFEST_FILES.map((f) => path.join(p.root, f)).filter((f) => fs.existsSync(f));
+}
+
+/**
+ * The repository security baseline — the dependency map and the one-time code
+ * scan. Outside the pipeline for the same reason onboarding is: both describe
+ * the repository rather than a change, and paying for them per run would be a
+ * tax with no return.
+ *
+ * The per-run CVE scan is a different thing entirely: it is the `security`
+ * stage, off by default, turned on by asking for it in the intent.
+ */
+export function cmdSecurity(opts) {
+  const p = paths(opts);
+  requireInstalled(p);
+  const state = securityStatus(p, { manifests: manifestPaths(p) });
+
+  if (opts.status) {
+    log('');
+    log(c.bold('Security baseline'), c.dim(state.complete ? 'complete' : state.status.replace(/_/g, ' ')));
+    for (const id of SECURITY_ARTIFACTS) {
+      const has = state.present.includes(id);
+      log(`  ${has ? c.green('✓') : c.dim('·')} ${id}${has ? '' : c.dim('  not produced')}`);
+    }
+    if (state.stale) {
+      log('');
+      log(`  ${c.yellow('!')} A dependency manifest is newer than the recorded map.`);
+      log(`    ${c.dim('Re-run to refresh it:')} ${c.cyan('npx hermit security')}`);
+    }
+    log('');
+    return state;
+  }
+
+  if (state.complete && !state.stale && !opts.force) {
+    log('');
+    log(`  ${c.green('✓')} This repository already has a security baseline.`);
+    log(`  ${c.dim('Artifacts:')} ${state.present.join(', ')} ${c.dim('in .hermit/security/')}`);
+    log(`  ${c.dim('Re-run after a dependency or codebase change:')} ${c.cyan('npx hermit security --force')}`);
+    log('');
+    return state;
+  }
+
+  const registry = loadRegistry(p);
+  const agent = registry.agentsById.security;
+  if (!agent) throw new Error('No security agent installed. Run: npx hermit init');
+
+  setSecurityStatus(p, SECURITY_STATUS.REQUESTED);
+  const layoutInfo = resolveProjects(p.root, readJson(p.config, {}));
+  const manifests = manifestPaths(p);
+
+  if (opts.json) return { agent: agent.id, missing: state.missing, manifests, playbook: agent.playbook };
+
+  log('');
+  log(c.bold('Security baseline'), c.dim('once per repository — not part of any run'));
+  log('');
+  if (layoutInfo.monorepo) {
+    log(`  ${c.dim('Projects:')} ${layoutInfo.projects.map((x) => x.id).join(', ')}`);
+  }
+  log(`  ${c.dim('Manifests:')} ${manifests.length ? manifests.map((f) => path.relative(p.root, f)).join(', ') : c.yellow('none found at the repo root')}`);
+  log(`  ${c.dim('To produce:')} ${(state.missing.length ? state.missing : SECURITY_ARTIFACTS).join(', ')}`);
+  if (state.stale) log(`  ${c.yellow('!')} the existing map predates a manifest change — refreshing it`);
+  log('');
+  log('  Hand this to your agent:');
+  log('');
+  log(`    ${c.cyan('Call hermit_security_task, follow that playbook, and submit each')}`);
+  log(`    ${c.cyan('artifact with hermit_submit_security.')}`);
+  log('');
+  log(`  ${c.dim('Then check progress with')} ${c.cyan('npx hermit security --status')}`);
+  log(`  ${c.dim('For a per-run CVE scan instead, ask for one in the intent:')}`);
+  log(`    ${c.dim('hermit start "<intent>, and run a security scan"')}`);
+  log('');
+  return state;
+}
+
 export function cmdSync(opts) {
   return cmdInit({ ...opts, quiet: true });
 }
@@ -278,6 +358,16 @@ export function cmdStart(intent, opts) {
 
   const flags = [];
   if (opts.noUi) flags.push('no-ui');
+
+  // Scope, from three sources that all end up in the same place: the sentence
+  // the user typed, --skip, and --with. Parsed once, here, and then frozen onto
+  // the run — nothing re-reads the intent later, so no agent can rephrase its
+  // way into or out of a stage.
+  const parsed = parseDirectives(intent);
+  const explicitSkip = resolveTargets(opts.skip ? String(opts.skip).split(',') : [], { action: 'skip' });
+  const explicitWith = resolveTargets(opts.with ? String(opts.with).split(',') : [], { action: 'include' });
+  const directives = [...parsed.decisions, ...explicitSkip.decisions, ...explicitWith.decisions];
+  const refused = [...parsed.refused, ...explicitSkip.refused];
 
   const config = readJson(p.config, {});
   const { projects, monorepo } = resolveProjects(p.root, config);
@@ -302,6 +392,9 @@ export function cmdStart(intent, opts) {
     intent,
     jiraKey: opts.jira ?? null,
     flags,
+    skip: [...parsed.skip, ...explicitSkip.stages],
+    include: [...parsed.include, ...explicitWith.stages],
+    directives,
     projects,
     selectedProjects,
     registry: loadRegistry(p)
@@ -314,6 +407,26 @@ export function cmdStart(intent, opts) {
   log(`  Intent:  ${intent}`);
   if (opts.jira) log(`  Tracker: ${opts.jira}`);
   if (flags.length) log(`  Flags:   ${flags.join(', ')}`);
+
+  // Show the words that changed the shape of the run, not just the result. A
+  // stage that stood down because of a phrase the user did not mean to write is
+  // only findable if the phrase is printed back.
+  const acted = directives.filter((d) => d.action !== 'refused');
+  if (acted.length) {
+    log('');
+    log('  Scope:');
+    const width = Math.max(...acted.map((d) => d.label.length));
+    for (const d of acted) {
+      const sign = d.action === 'skip' ? c.dim('−') : c.green('+');
+      log(`    ${sign} ${d.label.padEnd(width)}  ${c.dim(`from "${d.phrase}"`)}`);
+    }
+  }
+  for (const r of refused) {
+    log('');
+    log(`  ${c.yellow('!')} ${c.bold(r.label)} was not skipped — ${r.reason}.`);
+    log(`    ${c.dim(`Read from "${r.phrase}". A stage with a human gate is not something a prompt can remove.`)}`);
+  }
+
   if (monorepo) {
     log(`  Scope:   ${run.selectedProjects.join(', ')} ${c.dim(`(${projects.length} projects in repo)`)}`);
     if (!hasUiProject(projects, run.selectedProjects)) {
@@ -354,10 +467,20 @@ export function cmdStatus(opts) {
   // column rather than truncating, so measure instead of guessing.
   const stageWidth = Math.max(...s.stages.map((st) => st.id.length));
   const agentWidth = Math.max(...s.stages.map((st) => st.agent.length));
+  // Why a stage is not running matters more than the fact of it: "off unless
+  // asked for" and "you asked for it to be off" are different situations and a
+  // dash alone cannot tell them apart.
+  const reasonFor = (st) => {
+    if (st.status !== 'skipped') return '';
+    const d = (s.directives ?? []).find((x) => x.action === 'skip' && x.stages.includes(st.id));
+    if (d) return c.dim(`  skipped — "${d.phrase}"`);
+    if (st.optIn) return c.dim('  off unless the run asks for it');
+    return c.dim('  not applicable to this run');
+  };
   for (const [i, st] of s.stages.entries()) {
     const gate = st.gate === 'hitl' ? c.dim(' [human gate]') : '';
     const attempts = st.attempts > 1 ? c.dim(` ×${st.attempts}`) : '';
-    log(`  ${mark[st.status] ?? '?'} ${String(i + 1).padStart(2)}. ${st.id.padEnd(stageWidth)} ${c.dim(st.agent.padEnd(agentWidth))}${gate}${attempts}`);
+    log(`  ${mark[st.status] ?? '?'} ${String(i + 1).padStart(2)}. ${st.id.padEnd(stageWidth)} ${c.dim(st.agent.padEnd(agentWidth))}${gate}${attempts}${reasonFor(st)}`);
   }
   log('');
   log(`  Status: ${s.status === 'completed' ? c.green(s.status) : s.status === 'blocked' ? c.red(s.status) : s.status}   Artifacts: ${s.artifacts.length}`);

@@ -5,7 +5,7 @@ import { SERVERS, groupToolsByServer, effectiveMcpTools } from '@hermit/core';
  * category; `category/tool` narrows it. MCP tools are referenced as
  * `serverName/*`, with the precise allowlist carried in the mcp-servers block.
  */
-const WEB_CAPABLE = new Set(['onboarding', 'analyst', 'architect', 'ux-designer', 'documenter']);
+const WEB_CAPABLE = new Set(['onboarding', 'analyst', 'architect', 'ux-designer', 'documenter', 'security']);
 
 export function capabilityTools(agent) {
   const tools = new Set(['read', 'search']);
