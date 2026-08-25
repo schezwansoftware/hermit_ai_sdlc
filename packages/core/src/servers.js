@@ -27,6 +27,8 @@ export const SERVERS = {
       'hermit_start_run',
       'hermit_onboarding_task',
       'hermit_submit_onboarding',
+      'hermit_security_task',
+      'hermit_submit_security',
       'hermit_decide_gate'
     ]
   },
@@ -177,6 +179,12 @@ export const PROTOCOL_TOOLS = Object.freeze([
  * protocol floor every agent gets. Only the onboarding agent declares them.
  */
 export const ONBOARDING_TOOLS = Object.freeze(['hermit_onboarding_task', 'hermit_submit_onboarding']);
+
+/**
+ * The repository security baseline is the same shape: mapped once, outside any
+ * run, so its two tools belong to the security agent alone.
+ */
+export const SECURITY_TOOLS = Object.freeze(['hermit_security_task', 'hermit_submit_security']);
 
 /** Declared MCP tools plus the protocol floor, de-duplicated. */
 export function effectiveMcpTools(declared = []) {

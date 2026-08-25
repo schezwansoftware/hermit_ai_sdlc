@@ -119,7 +119,7 @@ To pick up changes you make in the clone, run `npx hermit sync` in your project 
 ```
 .hermit/                          ← yours to edit; survives sync and upgrades
   agents/          12 agent definitions
-  skills/          26 skill packs
+  skills/          29 skill packs
   knowledge/       2 knowledge packs (edit engineering-standards first)
   config.json      harness, servers, SCM provider, write permissions, projects
   hooks/           generated guards (Claude Code harness)
@@ -188,7 +188,7 @@ Files the previous harness wrote are **removed**, so a Claude Code workspace hol
 
 ### Claude Code specifics
 
-**The main session is the orchestrator.** Copilot gives the orchestrator its own `mode: primary` agent file; Claude Code has no equivalent, and a subagent dispatching subagents fights the model. So the orchestrator's playbook lives in `CLAUDE.md`, where the main session reads it, and the twelve role agents are subagents it dispatches through the Task tool.
+**The main session is the orchestrator.** Copilot gives the orchestrator its own `mode: primary` agent file; Claude Code has no equivalent, and a subagent dispatching subagents fights the model. So the orchestrator's playbook lives in `CLAUDE.md`, where the main session reads it, and the fourteen role agents are subagents it dispatches through the Task tool.
 
 **Skills are loaded, not inlined.** Each pack becomes a real skill under `.claude/skills/hermit-<id>/`, read on demand rather than copied into every agent that references it.
 
@@ -223,6 +223,10 @@ Anything but `y` declines, and the answer is remembered — you are not asked ag
 npx hermit onboard              # get the brief, hand it to your agent
 npx hermit onboard --status     # which of the three exist
 npx hermit onboard --force      # re-map after the codebase drifts
+
+npx hermit security             # dependency map + one-time code scan, same shape
+npx hermit security --status    # which of the two exist
+npx hermit security --force     # re-scan after dependencies move
 ```
 
 Hermit does not run the agent — it prepares the brief. Your agent calls `hermit_onboarding_task`, follows the playbook, and submits each document with `hermit_submit_onboarding`.

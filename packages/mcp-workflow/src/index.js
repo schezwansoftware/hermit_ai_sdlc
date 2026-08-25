@@ -32,14 +32,30 @@ import {
   ONBOARDING_ARTIFACTS,
   ONBOARDING_STATUS,
   checkOnboardingArtifact,
+  securityStatus,
+  writeSecurityArtifact,
+  setSecurityStatus,
+  SECURITY_ARTIFACTS,
+  SECURITY_STATUS,
+  checkSecurityArtifact,
+  MANIFEST_FILES,
+  parseDirectives,
+  resolveTargets,
   resolveProjects,
   readJson
 } from '@hermit/core';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const paths = layout(workspaceRoot());
 
 function registry() {
   return loadRegistry(paths);
+}
+
+/** Dependency manifests present at the repo root, for the baseline staleness check. */
+function manifestPaths() {
+  return MANIFEST_FILES.map((f) => path.join(paths.root, f)).filter((f) => fs.existsSync(f));
 }
 
 /**
@@ -340,18 +356,50 @@ const tools = [
       intent: z.string().describe('What is being built, in the user own words'),
       title: z.string().optional(),
       jiraKey: z.string().optional().describe('Tracker key, e.g. PROJ-412'),
-      flags: z.array(z.string()).optional().describe('e.g. ["no-ui"] to skip the three UX stages')
+      flags: z.array(z.string()).optional().describe('e.g. ["no-ui"] to skip the three UX stages'),
+      skip: z.array(z.string()).optional().describe(
+        'Stages to stand down, e.g. ["ux","pr"]. Only ever pass what the user actually asked for. ' +
+        'Requirements, architecture, review and delivery carry human gates and are refused.'
+      ),
+      with: z.array(z.string()).optional().describe(
+        'Off-by-default stages to turn on: "security" (dependency and CVE scan), "tracker" (epic/stories/tasks).'
+      )
     },
-    handler: ({ intent, title, jiraKey, flags = [] }) => {
-      const run = createRun(paths, { title: title ?? intent.slice(0, 80), intent, jiraKey: jiraKey ?? null, flags, registry: registry() });
+    handler: ({ intent, title, jiraKey, flags = [], skip = [], with: include = [] }) => {
+      // The intent sentence is read the same way `hermit start` reads it, so a run
+      // begun by an agent and one begun by a person land on the same scope.
+      const parsed = parseDirectives(intent);
+      const explicitSkip = resolveTargets(skip, { action: 'skip' });
+      const explicitWith = resolveTargets(include, { action: 'include' });
+
+      const run = createRun(paths, {
+        title: title ?? intent.slice(0, 80),
+        intent,
+        jiraKey: jiraKey ?? null,
+        flags,
+        skip: [...parsed.skip, ...explicitSkip.stages],
+        include: [...parsed.include, ...explicitWith.stages],
+        directives: [...parsed.decisions, ...explicitSkip.decisions, ...explicitWith.decisions],
+        registry: registry()
+      });
       const stage = getStage(DEFAULT_PIPELINE, run.currentStage);
       // The specialist that will actually take the stage, not the pipeline default.
       const agent = run.stages[stage?.id]?.agent ?? stage?.agent;
+      const refused = [...parsed.refused, ...explicitSkip.refused];
+      const skipped = Object.entries(run.stages).filter(([, v]) => v.status === 'skipped').map(([k]) => k);
+
       return {
         runId: run.id,
         firstStage: stage?.id,
         firstAgent: agent,
-        message: `Run ${run.id} created. Call hermit_next_task to receive the ${agent} brief.`
+        skippedStages: skipped,
+        refusedSkips: refused,
+        message:
+          `Run ${run.id} created. Call hermit_next_task to receive the ${agent} brief.` +
+          (refused.length
+            ? `\n\nRefused: ${refused.map((r) => `${r.target} (${r.reason})`).join('; ')}. ` +
+              'These stages carry human gates and cannot be skipped. Tell the user plainly rather than trying another route.'
+            : '')
       };
     }
   },
@@ -431,6 +479,86 @@ const tools = [
         missing: state.missing,
         message: state.complete
           ? 'Onboarding complete. Every run in this repository now reads these three documents.'
+          : `Recorded. Still missing: ${state.missing.join(', ')}.`
+      };
+    }
+  },
+  {
+    name: 'hermit_security_task',
+    title: 'Security baseline brief',
+    description:
+      'The repository security baseline brief — the dependency map and the one-time code scan. ' +
+      'These live outside any run, like onboarding. Call this only when asked to run `hermit security`. ' +
+      'For the per-run CVE scan use hermit_next_task instead; that is a pipeline stage.',
+    input: {},
+    handler: () => {
+      const state = securityStatus(paths, { manifests: manifestPaths() });
+      const agent = registry().agentsById.security;
+      if (!agent) return { error: 'No security agent is installed in this workspace.' };
+
+      if (state.complete && !state.stale) {
+        return {
+          status: state.status,
+          complete: true,
+          artifacts: state.present,
+          message:
+            'This repository already has a security baseline. Re-run only if dependencies or the ' +
+            'codebase have moved materially; submitting again overwrites the existing baseline.'
+        };
+      }
+
+      return {
+        status: state.status,
+        complete: false,
+        stale: state.stale,
+        missing: state.missing,
+        agent: { id: agent.id, name: agent.name, role: agent.role },
+        playbook: agent.playbook,
+        contract: { outputs: SECURITY_ARTIFACTS.map((id) => ({ id, required: true })), exitCriteria: [] },
+        message:
+          (state.stale
+            ? 'A dependency manifest is newer than the recorded map — the baseline is out of date. '
+            : '') +
+          `Produce ${(state.missing.length ? state.missing : SECURITY_ARTIFACTS).join(', ')} and submit each ` +
+          'with hermit_submit_security. There is no stage and no gate here.'
+      };
+    }
+  },
+  {
+    name: 'hermit_submit_security',
+    title: 'Submit security baseline artifact',
+    description:
+      'Record one repository-level security artifact. These live in .hermit/security/, outside any run, ' +
+      'because they describe the repository rather than a change. The per-run cve-report goes through ' +
+      'hermit_submit_artifact instead.',
+    input: {
+      artifact: z.enum(['dependency-map', 'security-baseline']),
+      content: z.string().describe('The full markdown body'),
+      agent: z.string().optional()
+    },
+    handler: ({ artifact, content, agent }) => {
+      const monorepo = resolveProjects(paths.root, readJson(paths.config, {})).monorepo;
+      const check = checkSecurityArtifact(artifact, content, { monorepo });
+      if (!check.ok) {
+        return {
+          submitted: null,
+          accepted: false,
+          failed: check.failed,
+          message:
+            `Refused — ${check.failed.length} check(s) not met:\n` +
+            check.failed.map((f) => `  - ${f.id}: ${f.detail}`).join('\n')
+        };
+      }
+      const meta = writeSecurityArtifact(paths, artifact, content, agent ?? 'security');
+      const state = securityStatus(paths, { manifests: manifestPaths() });
+      return {
+        submitted: artifact,
+        sha256: meta.sha256,
+        bytes: meta.bytes,
+        complete: state.complete,
+        missing: state.missing,
+        message: state.complete
+          ? 'Security baseline complete. Every run that opts into the security stage now reads these.'
           : `Recorded. Still missing: ${state.missing.join(', ')}.`
       };
     }

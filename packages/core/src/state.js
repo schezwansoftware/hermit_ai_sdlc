@@ -23,7 +23,8 @@ export function newRunId(now = new Date()) {
  */
 export function createRun(paths, {
   title, intent, jiraKey = null, flags = [], pipeline = DEFAULT_PIPELINE,
-  projects = [], selectedProjects = [], registry = null
+  projects = [], selectedProjects = [], registry = null,
+  skip = [], include = [], directives = []
 }) {
   const id = newRunId();
   const now = new Date().toISOString();
@@ -43,14 +44,30 @@ export function createRun(paths, {
   // run is nothing but interface work.
   const uiOnly = uiInScope && !tech.backend && tech.units.every((u) => UI_KINDS.has(u.kind));
 
+  // Scope asked for explicitly — by the intent sentence, by --skip/--with, or by
+  // the orchestrator calling hermit_start_run. Decided here, once, and then
+  // frozen: nothing re-reads the intent mid-run, so an agent cannot rephrase its
+  // way into or out of a stage.
+  const skipStages = new Set(skip);
+  const includeStages = new Set(include);
+
+  const isSkipped = (stage) => {
+    // A stage with a human gate is not something a sentence gets to remove. The
+    // parser already refuses these, and this is the second lock: even a
+    // hand-written flags array or a direct MCP call cannot drop one.
+    if (stage.skippable === false) return false;
+    // Off by default. An explicit skip still wins, so `--skip security` is safe
+    // to pass even when the prose already turned it on.
+    if (stage.optIn) return !includeStages.has(stage.id) || skipStages.has(stage.id);
+    if (skipStages.has(stage.id)) return true;
+    if (stage.skipWhen === 'no-ui') return flags.includes('no-ui') || !uiInScope;
+    if (stage.skipWhen === 'ui-only') return uiOnly;
+    return Boolean(stage.skipWhen && flags.includes(stage.skipWhen));
+  };
+
   const stages = {};
   for (const stage of pipeline.stages) {
-    const skipped =
-      stage.skipWhen === 'no-ui'
-        ? flags.includes('no-ui') || !uiInScope
-        : stage.skipWhen === 'ui-only'
-          ? uiOnly
-          : Boolean(stage.skipWhen && flags.includes(stage.skipWhen));
+    const skipped = isSkipped(stage);
     stages[stage.id] = {
       status: skipped ? STAGE_STATUS.SKIPPED : STAGE_STATUS.PENDING,
       // Resolved up front so `hermit status` names the specialist before the
@@ -71,6 +88,9 @@ export function createRun(paths, {
     intent,
     jiraKey,
     flags,
+    // Kept verbatim so `hermit status` and the journal can show which words in
+    // the intent stood a stage down, rather than only that it is not running.
+    directives,
     pipelineId: pipeline.id,
     pipelineVersion: pipeline.version,
     monorepo: projects.length > 1,
@@ -86,7 +106,12 @@ export function createRun(paths, {
   ensureDir(paths.runDir(id));
   writeJson(paths.runFile(id), run);
   setActiveRun(paths, id);
-  journal(paths, id, { event: 'run.created', title, intent, jiraKey, flags, projects: run.selectedProjects, uiInScope, stacks: run.tech.stacks });
+  journal(paths, id, {
+    event: 'run.created', title, intent, jiraKey, flags,
+    projects: run.selectedProjects, uiInScope, stacks: run.tech.stacks,
+    directives,
+    skipped: Object.entries(stages).filter(([, v]) => v.status === STAGE_STATUS.SKIPPED).map(([k]) => k)
+  });
   return run;
 }
 

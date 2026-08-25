@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
   cmdInit, cmdSync, cmdStart, cmdStatus, cmdRuns, cmdNext,
-  cmdGate, cmdResume, cmdArtifacts, cmdJournal, cmdDoctor, cmdProjects, cmdOnboard
+  cmdGate, cmdResume, cmdArtifacts, cmdJournal, cmdDoctor, cmdProjects, cmdOnboard, cmdSecurity
 } from '../src/commands.js';
 
 const HELP = `
@@ -15,13 +15,23 @@ hermit — agentic SDLC pipeline for GitHub Copilot and Claude Code workspaces
     hermit doctor                      check configuration, credentials and pipeline integrity
     hermit projects                    list the projects in this repo and how they were classified
     hermit onboard [--status]          map the codebase — once per repo, outside any run
+    hermit security [--status]         dependency map + code scan — once per repo, outside any run
 
   Runs
     hermit start "<intent>"            begin a run
         --jira <KEY>                   link a tracker item
         --project <a,b>                target specific projects in a monorepo
         --no-ui                        skip the three UX stages
+        --skip <a,b>                   stand stages down: ux, planning, qa, docs, pr, …
+        --with <a,b>                   turn on an off-by-default stage: security, tracker
         --title "<title>"
+
+      The intent is read for the same instructions, so the sentence is usually
+      enough:  hermit start "add cart persistence, skip the UX designs and no PR"
+               hermit start "harden the upload path, and run a security scan"
+
+      Requirements, architecture, review and delivery carry human gates and
+      cannot be skipped by either route. Asking prints why and continues.
     hermit status [--run <id>]         where the run stands
     hermit runs                        list runs
     hermit next [--json]               print the current stage brief
@@ -75,6 +85,7 @@ if (!command || opts.help || command === 'help') {
 const commands = {
   init: () => cmdInit(opts),
   onboard: () => cmdOnboard(opts),
+  security: () => cmdSecurity(opts),
   sync: () => cmdSync(opts),
   doctor: () => cmdDoctor(opts),
   projects: () => cmdProjects(opts),

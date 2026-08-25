@@ -1,6 +1,6 @@
 <h1>Hermit</h1>
 
-**An agentic SDLC pipeline for GitHub Copilot and Claude Code.** Twelve role agents carry work from a ticket to a merged pull request. Each sees only the context its role declares. A human signs off at the seven points where being wrong is expensive — and no agent can forge that signature.
+**An agentic SDLC pipeline for GitHub Copilot and Claude Code.** Fourteen role agents carry work from a ticket to a merged pull request. Each sees only the context its role declares. A human signs off at the seven points where being wrong is expensive — and no agent can forge that signature.
 
 ```bash
 npm i @hermit/cli                          # GitHub Copilot
@@ -16,24 +16,41 @@ That is the whole setup. → [Install guide](INSTALL.md) · [Concepts](docs/01-c
 
 ```
  ·  onboard                 onboarding    ·  once per repo, outside the pipeline — opt in
+ ·  security baseline       security      ·  once per repo, outside the pipeline — opt in
 
- 1  requirements            analyst       ⏸  spec + acceptance criteria
- 2  architecture            architect     ⏸  user flow, services, contracts, ADRs
+ 1  requirements            analyst       ⏸  spec + acceptance criteria         🔒
+ 2  architecture            architect     ⏸  user flow, services, contracts     🔒
  3  ux_lofi                 ux-designer   ⏸  structure and flow          ┐
  4  ux_midfi                ux-designer   ⏸  every screen × every state  ├ skipped when
  5  ux_hifi                 ux-designer   ⏸  visual contract, tokens     ┘ nothing has a UI
- 6  planning                planner       ·  work packages
- 7  implementation_ui       implementer*  ·  the interface and its tests    (skipped: no UI)
- 8  implementation_backend  implementer*  ·  the services and their tests   (skipped: UI only)
- 9  review                  reviewer      ⏸  review against the ratified design
-10  qa                      qa            ·  test plan, execution, result
-11  documentation           documenter    ·  update what the change invalidated
-12  delivery                orchestrator  ⏸  release notes, sign-off
-13  pull_request            orchestrator  ·  opens only after 12 is approved
+ 6  planning                planner       ·  work packages                      (⏸ if 7 runs)
+ 7  tracker                 story-writer  ·  epic, stories, tasks               ○ ask for it
+ 8  implementation_ui       implementer*  ·  the interface and its tests        (skipped: no UI)
+ 9  implementation_backend  implementer*  ·  the services and their tests       (skipped: UI only)
+10  security                security      ·  CVE scan, safe upgrades applied    ○ ask for it
+11  review                  reviewer      ⏸  review against the ratified design 🔒
+12  qa                      qa            ·  test plan, execution, result
+13  documentation           documenter    ·  update what the change invalidated
+14  delivery                orchestrator  ⏸  release notes, sign-off            🔒
+15  pull_request            orchestrator  ·  opens only after 14 is approved
 
                                           ⏸ = a human decides
+                                          🔒 = no prompt can skip this
+                                          ○ = off unless the run asks
                                           * a specialist may take this stage — see below
 ```
+
+**A run can be scoped from the sentence you already typed.**
+
+```bash
+hermit start "add cart persistence, skip the UX designs and don't open a PR"
+hermit start "harden the upload path, and run a security scan"
+hermit start "build the notifications epic — create the stories too"
+```
+
+Matching is mechanical: cue words and stage aliases, no model in the loop. Whatever it decided is printed back with the exact phrase that caused it, so a sentence you did not mean to write is visible rather than mysterious. `--skip ux,pr` and `--with security,tracker` do the same thing explicitly.
+
+**The four locked stages are locked against this too.** Ask to skip requirements, architecture, review or delivery and Hermit says why it will not, then carries on with them in place. Those four are where the gates that matter live; a gate a sentence can dissolve is not a gate.
 
 **Onboarding is not a stage.** It maps the codebase into three documents every run then reads, so paying for it per run was a tax with no return. `hermit onboard` does it once, into `.hermit/onboarding/`. It costs real tokens, so `hermit init` asks rather than assuming — decline it and runs proceed, naming the inputs they are missing.
 
@@ -42,6 +59,12 @@ That is the whole setup. → [Install guide](INSTALL.md) · [Concepts](docs/01-c
 **The interface is built before the services.** Stage 8 works against the published contract, not against running code, and records anything the contract failed to promise under `## Contract Gaps`. Stage 9 reads that section first. A mock on one side and nothing on the other is the failure this ordering is designed to surface early.
 
 The pull request comes **after** the human gate, never before. Opening one notifies your team, so it follows sign-off rather than preceding it.
+
+**Two stages are off until you ask.** Both do something outward-facing, and most changes need neither.
+
+`security` scans what the run depends on against advisory data, applies the patch and minor upgrades that close a vulnerability, and verifies the suite still passes. A fix that only exists in a **major** version is never taken — it is counted, and a non-zero count opens a human gate where someone accepts the break risk. Its write scope is manifests and lockfiles only, so a security pass cannot quietly become a refactor. The expensive half — the dependency map and the code-level scan — is `hermit security`, paid for once per repository like onboarding.
+
+`tracker` turns the approved work plan into an epic, stories and tasks. Because it writes to a real tracker, turning it on makes **planning** a human gate: the plan is approved first, and the stage then executes a decision that was already made — the same shape as the pull request following delivery sign-off.
 
 ---
 
@@ -160,6 +183,8 @@ Hermit also emits `.github/instructions/project-<id>.instructions.md` scoped wit
 |---|---|---|
 | `orchestrator` | routing · delivery · pull_request | release notes, the pull request |
 | `onboarding` | *outside the pipeline* | project context, codebase map, glossary |
+| `security` | security *(and the repo baseline)* | dependency map, CVE report, safe upgrades |
+| `story-writer` | tracker | epic, stories, tasks, story map |
 | `analyst` | requirements | requirements spec, acceptance criteria |
 | `ux-designer` | ux_lofi · ux_midfi · ux_hifi | wireframes, design spec, design tokens |
 | `architect` | architecture | user flow, architecture spec, ADRs, impact analysis |
@@ -171,9 +196,9 @@ Hermit also emits `.github/instructions/project-<id>.instructions.md` scoped wit
 | `qa` | qa | test plan, test report |
 | `documenter` | documentation | updated docs, staleness audit |
 
-Backed by 26 skill packs and 2 knowledge packs. All markdown, all in `.hermit/`, all yours to edit — then `hermit sync`.
+Backed by 29 skill packs and 2 knowledge packs. All markdown, all in `.hermit/`, all yours to edit — then `hermit sync`.
 
-**Start by replacing `knowledge/engineering-standards`** with your team's real standards. It is injected into every agent's context and is the cheapest way to make all ten behave like your team rather than a generic one.
+**Start by replacing `knowledge/engineering-standards`** with your team's real standards. It is injected into every agent's context and is the cheapest way to make all of them behave like your team rather than a generic one.
 
 ---
 
@@ -272,10 +297,13 @@ Because IntelliJ loads no agent files, every playbook is **also** served over MC
 ```bash
 hermit init [--harness a,b]        # install into this workspace (copilot · claude)
 hermit onboard [--status]          # map the codebase — once per repo, opt-in
+hermit security [--status]         # dependency map + code scan — once per repo, opt-in
 hermit doctor                      # config, credentials, pipeline integrity
 hermit projects                    # what this repo contains and how it was classified
 
 hermit start "<intent>" --jira K   # begin a run   ( --project a,b   --no-ui )
+                                   #   scope reads the intent; or be explicit:
+                                   #   --skip ux,pr   --with security,tracker
 hermit status                      # where things stand
 hermit next                        # print the current stage brief
 hermit resume [<run-id>]           # reopen a blocked run
@@ -293,6 +321,7 @@ hermit sync                        # recompile after editing .hermit/
 ```bash
 npm test                            # full pipeline through the state machine
 npm run check:monorepo              # scoping, stage skipping, conditional criteria
+npm run check:scope                 # prompt-driven scope, locked stages, opt-in gates
 npm run check:specialists           # stack-based routing and the split design
 npm run check:harness               # both harnesses compile; scope survives translation
 npm run check:mcp   -- <workspace>  # all six servers handshake over stdio
@@ -306,7 +335,7 @@ npm run check:gates -- <workspace>  # gate enforcement across the MCP boundary
 ```
 packages/
   core/            state machine, gates, context scoping, project detection
-  agents/          12 agents · 26 skills · 2 knowledge packs (markdown)
+  agents/          14 agents · 29 skills · 2 knowledge packs (markdown)
   cli/             hermit CLI and the host compiler
   mcp-shared/      server bootstrap, HTTP client, config
   mcp-workflow/    the ledger

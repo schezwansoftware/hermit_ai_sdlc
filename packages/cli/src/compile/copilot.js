@@ -293,7 +293,7 @@ ${projects.map((p) => `| \`${p.id}\` | \`${p.path}/\` | ${p.kind} | ${p.ui ? 'ye
 - **Shared code lives in shared packages.** Do not copy a utility between projects.
 - **Each project owns its tests.** Run the suite for the project you changed, not just the root command.
 
-Runs can target a subset: \`hermit start "<intent>" --project ${projects.slice(0, 2).map((p) => p.id).join(',')}\`. When no project in scope has a UI, the three UX stages are skipped automatically.
+Runs can target a subset: \`hermit start "<intent>" --project ${projects.slice(0, 2).map((p) => p.id).join(',')}\`. When no project in scope has a UI, the three UX stages are skipped automatically. The intent sentence can also stand stages down ("skip the UX designs", "don't open a PR") or turn on the two opt-in stages ("run a security scan", "create the stories") — except requirements, architecture, review and delivery, which no prompt can skip.
 `
   });
 

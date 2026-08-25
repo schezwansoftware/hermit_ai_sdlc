@@ -27,17 +27,41 @@ Three practical reasons, in order of how much they hurt:
 
 | Agent | Owns stage(s) | Produces |
 |---|---|---|
-| `orchestrator` | `delivery` + supervises all | `release-notes` |
-| `onboarding` | `onboard` | `project-context`, `codebase-map`, `glossary` |
+| `orchestrator` | `delivery`, `pull_request` + supervises all | `release-notes`, `pull-request` |
+| `onboarding` | *outside the pipeline* | `project-context`, `codebase-map`, `glossary` |
 | `analyst` | `requirements` | `requirements-spec`, `acceptance-criteria` |
-| `ux-designer` | `ux_lofi`, `ux_midfi`, `ux_hifi` | `ux-lofi`, `ux-midfi`, `ux-hifi`, `design-tokens` |
 | `architect` | `architecture` | `architecture-spec`, `adr`, `impact-analysis` |
+| `ux-designer` | `ux_lofi`, `ux_midfi`, `ux_hifi` | `ux-lofi`, `ux-midfi`, `ux-hifi`, `design-tokens` |
 | `planner` | `planning` | `work-plan` |
-| `implementer` | `implementation` | `change-set` |
+| `story-writer` | `tracker` ○ | `story-map` |
+| `implementer` | `implementation_ui`, `implementation_backend` | `change-set-ui`, `change-set` |
+| `ui-developer` | `implementation_ui` *(react · angular)* | `change-set-ui` |
+| `backend-developer` | `implementation_backend` *(python · go · jvm · node)* | `change-set` |
+| `security` | `security` ○ + the repository baseline | `cve-report`, `dependency-map`, `security-baseline` |
 | `reviewer` | `review` | `review-report` |
 | `qa` | `qa` | `test-plan`, `test-report` |
+| `documenter` | `documentation` | `docs-update` |
+
+○ Off unless the run asks for it.
 
 Stages are the unit of state. Agents are the unit of capability. One agent can own several stages — `ux-designer` owns three, one per fidelity — and one stage can be re-run when a gate sends it back.
+
+## Which stages a run includes
+
+Decided once, when the run is created, from the intent as written:
+
+```bash
+hermit start "add cart persistence, skip the UX designs and don't open a PR"
+```
+
+Matching is mechanical — cue words against a fixed table of stage aliases, no model in the loop — so the same sentence always produces the same run shape, and `hermit start` prints the phrase behind every decision. `--skip` and `--with` say the same thing explicitly.
+
+Two properties make this safe to expose to prose:
+
+1. **It is frozen at creation.** Nothing re-reads the intent later, so an agent cannot rephrase its way into or out of a stage.
+2. **Four stages are locked.** Requirements, architecture, review and delivery are refused with a reason, at two layers — the parser, and `createRun` itself, so a direct MCP call is refused too. Those four hold the gates the design rests on, and a gate a sentence can dissolve is not a gate.
+
+Two stages invert the default: `tracker` and `security` are off until asked for, because both act outward — one writes to a real tracker, the other changes dependency manifests.
 
 ## Handoff, concretely
 

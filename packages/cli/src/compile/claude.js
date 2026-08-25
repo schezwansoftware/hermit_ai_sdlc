@@ -374,7 +374,7 @@ ${projects.map((p) => `| \`${p.id}\` | \`${p.path}/\` | ${p.kind} | ${p.ui ? 'ye
 
 Run scope is set when the run starts; \`hermit_next_task\` tells you which projects are in scope. Anything out of scope is readable for context but not writable.
 
-Runs can target a subset: \`hermit start "<intent>" --project ${projects.slice(0, 2).map((p) => p.id).join(',')}\`. When no project in scope has a UI, the UX stages and the interface implementation stage are skipped automatically.
+Runs can target a subset: \`hermit start "<intent>" --project ${projects.slice(0, 2).map((p) => p.id).join(',')}\`. When no project in scope has a UI, the UX stages and the interface implementation stage are skipped automatically. The intent sentence can also stand stages down ("skip the UX designs", "don't open a PR") or turn on the two opt-in stages ("run a security scan", "create the stories") — except requirements, architecture, review and delivery, which no prompt can skip.
 `
   }];
 }
