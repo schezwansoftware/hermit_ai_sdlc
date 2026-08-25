@@ -5,3 +5,7 @@ node_modules/
 .DS_Store
 .env
 .env.*
+
+# Claude Code's local scratch space. `git worktree` checkouts land here, each a
+# full copy of the repo including node_modules — never something to commit.
+.claude/

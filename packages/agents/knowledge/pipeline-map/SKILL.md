@@ -86,7 +86,7 @@ Two more open conditionally, and only when the condition holds: **planning**, wh
 
 A gate has three outcomes: **approve** (stage closes), **changes_requested** (the same agent runs again with the reviewer's comment attached), **reject** (run blocks; a human decides what happens).
 
-No agent can approve a gate. There is no tool for it.
+No agent decides a gate on its own judgement. A decision is either a person running the CLI, or the orchestrator relaying one a human just gave it explicitly, in chat, through `hermit_decide_gate` — a tool no role agent has. If you are not the orchestrator and a gate is open, report it and stop; do not try to resolve it yourself.
 
 ## Re-entry
 

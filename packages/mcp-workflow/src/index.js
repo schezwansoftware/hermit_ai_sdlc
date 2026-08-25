@@ -19,7 +19,10 @@ import {
   runStatus,
   readArtifact,
   openGates,
+  getGate,
   getStage,
+  decideGate,
+  resolveDecider,
   onboardingStatus,
   writeOnboardingArtifact,
   readOnboardingArtifact,
@@ -76,8 +79,12 @@ Normal agent loop:
   2. hermit_submit_artifact  once per declared output
   3. hermit_request_handoff  ask to advance
 
-Gates are human-only. There is no tool here that approves one. A human runs
-"hermit gate approve <id>" in a terminal. If a gate is open, stop and say so.`;
+Gates are human-only. A person can decide one from a terminal at any time
+("hermit gate approve <id>"), or the orchestrator can call hermit_decide_gate
+from chat — but only in the same turn a human has explicitly said what to
+decide, and only after they confirm the call when the host asks. Role agents
+never see that tool; if a gate is open and you are not the orchestrator, stop
+and report it.`;
 
 const tools = [
   {
@@ -200,8 +207,9 @@ const tools = [
     name: 'hermit_gate_status',
     title: 'Gate status',
     description:
-      'Open human gates and their history. READ ONLY BY DESIGN — no tool in this server can approve ' +
-      'a gate. Approval happens when a person runs the Hermit CLI.',
+      'Open human gates and their history. READ ONLY: this tool cannot decide anything. A decision ' +
+      'comes from a person in a terminal, or from the orchestrator calling hermit_decide_gate after a ' +
+      'human has said what to decide and confirmed the call.',
     readOnly: true,
     input: {},
     handler: () =>
@@ -213,12 +221,75 @@ const tools = [
           openedAt: g.openedAt,
           reviewArtifacts: g.reviewArtifacts,
           approveWith: `hermit gate approve ${g.id}`,
-          requestChangesWith: `hermit gate changes ${g.id} -m "what needs to change"`
+          requestChangesWith: `hermit gate changes ${g.id} -m "what needs to change"`,
+          orchestratorOnly: `hermit_decide_gate { gateId: "${g.id}", decision: "approve" }`
         })),
         decided: run.gates
           .filter((g) => g.status !== 'open')
-          .map((g) => ({ id: g.id, stage: g.stageId, decision: g.decision, by: g.decidedBy, at: g.decidedAt, comment: g.comment }))
+          .map((g) => ({
+            id: g.id, stage: g.stageId, decision: g.decision,
+            by: g.decidedBy, at: g.decidedAt, comment: g.comment, source: g.source ?? 'cli'
+          }))
       }))
+  },
+  {
+    name: 'hermit_decide_gate',
+    title: 'Decide a gate — orchestrator only, requires human confirmation',
+    description:
+      'Approve, request changes on, or reject an open gate, from chat instead of a terminal. This is ' +
+      'not a shortcut for your own judgement: call it only in the same turn a human has explicitly told ' +
+      'you what to decide and why. The host will ask them to confirm before it runs — that confirmation ' +
+      'is the human decision Hermit records, not anything you inferred. Reachable by the orchestrator ' +
+      'only; a role agent that finds an open gate reports it and stops instead.',
+    destructive: true,
+    input: {
+      gateId: z.string().optional().describe('Defaults to the single open gate, if there is exactly one'),
+      decision: z.enum(['approve', 'changes_requested', 'reject']).describe('What the human told you to do'),
+      comment: z.string().optional().describe('Required for changes_requested and reject; the human\'s reason'),
+      decidedBy: z.string().optional().describe('The human\'s name. Defaults to the workspace git identity'),
+      agent: z.string().describe('Must be "orchestrator" — role agents cannot decide a gate')
+    },
+    handler: ({ gateId, decision, comment, decidedBy, agent }) =>
+      withRun((run) => {
+        if (agent !== 'orchestrator') {
+          return {
+            state: 'denied',
+            message:
+              'Only the orchestrator decides a gate. If you are a role agent, stop and report the ' +
+              'open gate to the orchestrator instead of trying to resolve it yourself.'
+          };
+        }
+        const open = openGates(run);
+        const target = gateId ?? (open.length === 1 ? open[0].id : null);
+        if (!target) {
+          return open.length
+            ? { state: 'ambiguous', message: `Multiple gates are open: ${open.map((g) => g.id).join(', ')}. Name one.` }
+            : { state: 'no_open_gate', message: 'No gate is currently open.' };
+        }
+        if (!getGate(run, target)) {
+          return { state: 'not_found', message: `Gate "${target}" not found in this run.` };
+        }
+
+        const by = resolveDecider(paths.root, decidedBy);
+        if (!by) {
+          return { state: 'denied', message: 'Could not determine who is deciding. Ask the human for their name and pass decidedBy.' };
+        }
+
+        let gate;
+        try {
+          gate = decideGate(paths, run, target, decision, { decidedBy: by, comment: comment ?? null, source: 'chat' });
+        } catch (err) {
+          return { state: 'refused', message: err.message };
+        }
+        saveRun(paths, run);
+
+        return {
+          decided: gate.id,
+          decision: gate.decision,
+          by: gate.decidedBy,
+          message: `${gate.decision} recorded for "${gate.stageTitle}" via chat, decided by ${by}.`
+        };
+      })
   },
   {
     name: 'hermit_list_agents',

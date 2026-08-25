@@ -20,7 +20,7 @@ If you deleted the MCP server, the orchestrator agent would still be the orchest
 Three practical reasons, in order of how much they hurt:
 
 1. **Copilot's surfaces don't share memory.** A run started in VS Code must be resumable from the CLI. Context windows are per-session; a file is not.
-2. **Gates need to be unfakeable.** If "approved" is a sentence in a transcript, a model can produce that sentence. If it's a signed record only the CLI can write, it can't. See `docs/03-gates.md`.
+2. **Gates need to be unfakeable.** If "approved" is a sentence in a transcript, a model can produce that sentence for itself. A signed record has to come from somewhere the model does not fully control — a person typing into the CLI, or the orchestrator calling `hermit_decide_gate` only after that same person, in that same conversation, told it what to decide and confirmed the call.
 3. **Context scoping needs a chokepoint.** "Each agent fetches only its own context" is enforceable only if something outside the agent decides what it receives. An agent asked to ignore an artifact it can already see is being asked to forget, which is not a thing models do reliably.
 
 ## The cast

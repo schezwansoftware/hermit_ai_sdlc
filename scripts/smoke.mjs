@@ -1,8 +1,9 @@
 /**
  * End-to-end smoke test of the Hermit state machine, run against a throwaway
  * workspace. Exercises: run creation, context scoping, exit-criteria refusal,
- * HITL gate blocking, CLI-only gate decisions, changes_requested re-entry, and
- * full pipeline completion.
+ * HITL gate blocking, gate decisions from the CLI and from chat, comment
+ * requirements on non-approve decisions, changes_requested re-entry, and full
+ * pipeline completion.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -158,7 +159,7 @@ const BODIES = {
   'pull-request': '# Pull Request\n\n**URL**: https://github.com/acme/shop/pull/918\n**Provider**: github\n**Branch**: feat/proj-412 → main\n\n## Body Submitted\nWhat/Why/How.\n\n## Linked\nPROJ-412\n\n## Reviewers Requested\npayments\n\n## Checks\npending\n'
 };
 
-let gatesHit = 0, stagesDone = 0, changesRequestedTested = false;
+let gatesHit = 0, stagesDone = 0, changesRequestedTested = false, chatDecisionTested = false;
 
 for (let guard = 0; guard < 40; guard++) {
   let cur = loadRun(paths, run.id);
@@ -170,11 +171,18 @@ for (let guard = 0; guard < 40; guard++) {
   if (open.length) {
     const g = open[0];
     gatesHit++;
-    // An agent must never be able to approve. Prove it.
+    // Only 'cli' and 'chat' are trusted sources. Nothing else gets near a decision.
     assert.throws(
       () => decideGate(paths, cur, g.id, 'approve', { decidedBy: 'agent', source: 'mcp' }),
       /only be made by a human/,
-      'MCP-sourced gate approval must be refused'
+      'a source outside cli/chat must be refused'
+    );
+    // A non-approve decision needs a reason, wherever it comes from — this is
+    // decideGate's own rule now, not something only the CLI happened to check.
+    assert.throws(
+      () => decideGate(paths, cur, g.id, 'changes_requested', { decidedBy: 'harshit', source: 'chat' }),
+      /needs a reason/,
+      'changes_requested with no comment must be refused regardless of source'
     );
     // Exercise the changes_requested path once, on the architecture gate.
     if (g.stageId === 'architecture' && !changesRequestedTested) {
@@ -186,6 +194,15 @@ for (let guard = 0; guard < 40; guard++) {
       assert.equal(back.stage.id, 'architecture');
       assert.ok(back.rendered.includes('Reviewer feedback'), 're-entry must carry the reviewer comment');
       console.log('✓ changes_requested returned the stage to architect with feedback attached');
+      continue;
+    }
+    // Exercise a real 'chat' decision once, on the review gate — proving the
+    // second door actually advances a run, not just that it fails safely.
+    if (g.stageId === 'review' && !chatDecisionTested) {
+      chatDecisionTested = true;
+      const decided = decideGate(paths, cur, g.id, 'approve', { decidedBy: 'harshit', source: 'chat' });
+      assert.equal(decided.source, 'chat', 'the gate record must say which door decided it');
+      saveRun(paths, cur);
       continue;
     }
     decideGate(paths, cur, g.id, 'approve', { decidedBy: 'harshit', source: 'cli' });

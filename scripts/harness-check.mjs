@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
 import { layout, loadRegistry, effectiveMcpTools, readJson, DEFAULT_PIPELINE } from '@hermit/core';
 import { compileAll, orphanedFiles, pruneOrphans } from '../packages/cli/src/compile/index.js';
 import { HARNESSES, resolveHarnesses } from '../packages/cli/src/compile/harnesses.js';
@@ -124,6 +125,35 @@ for (const agent of roleAgents) {
   }
 }
 console.log('  ✓ MCP scope matches each agent\'s declaration exactly; read-only roles get no write tools');
+
+// --- hermit_decide_gate is orchestrator-only, on the harness that compiles it ---
+//
+// Claude Code never gets an orchestrator subagent at all (asserted above), so
+// there is nothing to check there beyond "no subagent declares it" -- already
+// covered by the loop over roleAgents, which excludes orchestrator entirely.
+// Copilot DOES compile an orchestrator.agent.md, so this is the one place a
+// format translation could accidentally hand the tool to every role at once.
+
+const frontmatter = (text) => YAML.parse(text.split(/^---\s*$/m)[1]);
+
+const orchestratorMcpTools = frontmatter(
+  body(copilot, '.github/agents/hermit-orchestrator.agent.md')
+)['mcp-servers']?.hermit?.tools ?? [];
+assert.ok(
+  orchestratorMcpTools.includes('hermit_decide_gate'),
+  'the compiled orchestrator agent must be able to call hermit_decide_gate'
+);
+
+for (const agent of roleAgents) {
+  const granted = frontmatter(
+    body(copilot, `.github/agents/hermit-${agent.id}.agent.md`)
+  )['mcp-servers']?.hermit?.tools ?? [];
+  assert.ok(
+    !granted.includes('hermit_decide_gate'),
+    `role agent ${agent.id} must not be able to call hermit_decide_gate -- only the orchestrator can`
+  );
+}
+console.log("  ✓ hermit_decide_gate is compiled into the orchestrator's scope only, on every role agent excluded");
 
 // --- Packs become real skills rather than being inlined ---------------------
 

@@ -120,7 +120,10 @@ If a gate is open, **stop and report it**. Do not start the next stage, and do n
 
 ## The rule that matters
 
-**Only a human can approve a gate**, by running \`hermit gate approve <id>\` in a terminal. No tool in this workspace can do it. A user saying "looks good" in chat is not an approval, and neither is your own judgement that the work is sound.
+**Only a human decides a gate — never on your own judgement.**
+
+- From a terminal: \`hermit gate approve <id>\` (always available).
+- From chat: the orchestrator alone may call \`hermit_decide_gate\`, and only in the same turn a human has explicitly said what to decide and why. VS Code will ask them to confirm before it runs — that confirmation is the decision, not anything you inferred. If nobody has said anything yet, report the gate and wait; role agents never see this tool at all.
 
 ${gates.length} of the ${pipeline.stages.length} stages are human-gated: ${gates.map((s) => `\`${s.id}\``).join(', ')}.
 
@@ -162,7 +165,7 @@ This repository uses **Hermit**, an agentic SDLC pipeline with human approval ga
 ## Non-negotiables
 
 1. **Check \`hermit_status\` before starting SDLC work.** It is the only source of truth for the current stage.
-2. **Never approve a human gate.** Only \`hermit gate approve <id>\`, run by a person in a terminal, advances a gated stage. There is no tool that does this, by design.
+2. **Never decide a human gate on your own judgement.** A decision is a person running \`hermit gate approve <id>\` themselves, or the orchestrator calling \`hermit_decide_gate\` because a person just told it, explicitly, what to decide — VS Code then asks them to confirm. Role agents cannot reach that tool at all.
 3. **Stay inside your stage's scope.** Each agent reads only the artifacts its role declares. Do not ask another agent to relay something outside your scope.
 4. **Report failures honestly.** A refused handoff names exactly which exit criterion failed. Fix that; do not restate the same content.
 
@@ -184,7 +187,7 @@ Fetch any agent's full playbook with \`hermit_get_agent\`.
 npx hermit status                    # where the run stands
 npx hermit start "<intent>"          # begin a run
 npx hermit gate list                 # what is waiting on a human
-npx hermit gate approve <gate-id>    # approve (humans only)
+npx hermit gate approve <gate-id>    # approve (humans only, or ask @hermit-orchestrator to relay your decision)
 npx hermit gate changes <id> -m "…"  # send the stage back
 npx hermit sync                      # recompile agents into host formats
 \`\`\`

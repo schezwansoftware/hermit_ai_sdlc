@@ -28,7 +28,8 @@ export const SERVERS = {
       'hermit_onboarding_task',
       'hermit_submit_onboarding',
       'hermit_security_task',
-      'hermit_submit_security'
+      'hermit_submit_security',
+      'hermit_decide_gate'
     ]
   },
   jira: {

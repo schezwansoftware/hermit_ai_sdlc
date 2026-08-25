@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { PACK_ROOT } from '@hermit/agents';
 import {
   layout, loadRegistry, ensureDir, readJson, writeJson,
@@ -12,7 +11,7 @@ import {
   ONBOARDING_ARTIFACTS, ONBOARDING_STATUS,
   securityStatus, setSecurityStatus, SECURITY_ARTIFACTS, SECURITY_STATUS, MANIFEST_FILES,
   parseDirectives, resolveTargets,
-  nextTask, runStatus, decideGate, getGate, openGates, readArtifact, listArtifacts
+  nextTask, runStatus, decideGate, getGate, openGates, readArtifact, listArtifacts, resolveDecider
 } from '@hermit/core';
 import { compileAll, installPacks, writeFiles, orphanedFiles, pruneOrphans } from './compile/index.js';
 import { HARNESSES, resolveHarnesses } from './compile/harnesses.js';
@@ -30,14 +29,6 @@ const log = (...a) => console.log(...a);
 
 function paths(opts = {}) {
   return layout(opts.cwd ?? process.cwd());
-}
-
-function gitUser(cwd) {
-  try {
-    return execFileSync('git', ['config', 'user.name'], { cwd, encoding: 'utf8' }).trim() || null;
-  } catch {
-    return null;
-  }
 }
 
 const DEFAULT_CONFIG = {
@@ -547,6 +538,7 @@ export function cmdGate(action, gateId, opts) {
       log(`     opened ${g.openedAt}`);
       log(`     review: ${(g.reviewArtifacts ?? []).join(', ')}`);
       for (const cr of g.criteria ?? []) log(`       ${cr.ok ? c.green('✓') : c.red('✗')} ${cr.id}`);
+      log(`     ${c.dim('or tell the orchestrator to decide it — it will ask you to confirm')}`);
       log('');
     }
     return open;
@@ -564,7 +556,7 @@ export function cmdGate(action, gateId, opts) {
     throw new Error(`"${action}" needs a reason so the agent knows what to fix: hermit gate ${action} ${target} -m "..."`);
   }
 
-  const by = opts.by ?? gitUser(p.root) ?? process.env.USER ?? null;
+  const by = resolveDecider(p.root, opts.by ?? null);
   if (!by) throw new Error('Could not determine who is deciding. Pass --by "your name".');
 
   decideGate(p, run, target, decision, { decidedBy: by, comment: opts.message ?? null, source: 'cli' });

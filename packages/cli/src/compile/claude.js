@@ -157,13 +157,13 @@ Then \`hermit_next_task\`, which names the stage's agent and returns that agent'
 
 ## The rule that matters
 
-**Only a human can approve a gate**, by running \`hermit gate approve <id>\` in a terminal themselves.
+**Only a human decides a gate — never on your own judgement.**
 
-- No tool in this workspace can do it. There is nothing to call.
-- A workspace hook blocks \`hermit gate approve\` from Bash. If you try, it fails — that is the design working, not an obstacle to route around.
-- A user saying "looks good" in chat is not an approval. Neither is your own judgement that the work is sound.
+- From a terminal: \`hermit gate approve <id>\`, run by them. A workspace hook blocks that same command if *you* try to run it through Bash — that is the design working, not an obstacle to route around.
+- From chat: you may call \`hermit_decide_gate\`, but only in the same turn a human has explicitly told you what to decide and why. Claude Code will ask them to confirm before it runs — that confirmation is the decision, not your read of whether the work looks ready.
+- If nobody has said anything yet, **stop and report the gate**: its id and the exact command. That is the default. "Looks good" from you is never a reason to call the tool; only a human saying it is.
 
-When a gate is open: **stop and report it**. Give the gate id and the exact command. Do not start the next stage.
+Role subagents never have \`hermit_decide_gate\` in their tool list — only you, the orchestrator, can reach it.
 
 ${gates.length} of the ${pipeline.stages.length} stages are human-gated: ${gates.map((s) => `\`${s.id}\``).join(', ')}.
 
