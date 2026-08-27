@@ -17,6 +17,7 @@ context:
       - change-set
       - change-set-ui
       - requirements-spec
+      - cve-report
     mcp:
       - hermit_security_task
       - hermit_submit_security

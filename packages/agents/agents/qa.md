@@ -7,7 +7,7 @@ stages: [qa]
 model: gpt-5
 context:
   reads:
-    artifacts: [change-set, change-set-ui, acceptance-criteria, review-report]
+    artifacts: [change-set, change-set-ui, acceptance-criteria, review-report, test-plan, test-report]
     mcp:
       - jira_get_issue
       - jira_add_comment

@@ -7,7 +7,7 @@ stages: [requirements]
 model: gpt-5
 context:
   reads:
-    artifacts: [project-context, glossary]
+    artifacts: [project-context, glossary, requirements-spec, acceptance-criteria]
     mcp:
       - jira_get_issue
       - jira_search

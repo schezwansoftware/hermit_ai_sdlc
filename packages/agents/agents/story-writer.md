@@ -15,6 +15,7 @@ context:
       - impact-analysis
       - project-context
       - glossary
+      - story-map
     mcp:
       - jira_get_issue
       - jira_search
