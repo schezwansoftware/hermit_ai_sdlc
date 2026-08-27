@@ -94,6 +94,9 @@ let firstTask = nextTask({ paths, run: loadRun(paths, run.id), registry: reg });
 assert.equal(firstTask.state, 'task');
 assert.equal(firstTask.stage.id, 'requirements', 'requirements is now the first stage');
 assert.ok(firstTask.bundle.missingInputs.includes('project-context'), 'an un-onboarded run names its missing inputs');
+assert.equal(firstTask.bundle.attempt, 1, 'a fresh stage is attempt 1');
+assert.deepEqual(firstTask.bundle.priorOutputs, [], 'a first attempt carries no prior draft — nothing was written yet');
+assert.ok(!firstTask.rendered.includes('What you submitted last time'), 'a first attempt must not spend context on a revision section');
 console.log('✓ un-onboarded run starts at requirements and reports its missing inputs');
 
 // Now onboard the repository. Nothing is scoped to the run.
@@ -193,7 +196,45 @@ for (let guard = 0; guard < 40; guard++) {
       assert.equal(back.state, 'task');
       assert.equal(back.stage.id, 'architecture');
       assert.ok(back.rendered.includes('Reviewer feedback'), 're-entry must carry the reviewer comment');
+
+      // The stage's own last draft comes back with it. Without this the agent
+      // rebuilds the artifact from the brief and silently drops any decision it
+      // recorded last time that the brief does not carry.
+      assert.equal(back.bundle.attempt, 2, 'a stage sent back is on attempt 2');
+      assert.deepEqual(
+        back.bundle.priorOutputs.map((a) => a.id).sort(),
+        ['adr', 'architecture-spec', 'impact-analysis'],
+        're-entry must return every output this stage already produced'
+      );
+      assert.ok(
+        back.bundle.priorOutputs.every((a) => a.content.length),
+        'a returned draft must carry its content, not just its name'
+      );
+      assert.ok(
+        back.rendered.includes('Persist cart before redirect'),
+        'the prior draft must reach the rendered brief, not just the bundle'
+      );
+      assert.ok(
+        back.rendered.includes('What you submitted last time'),
+        'the prior draft must be labelled as the agent\'s own, not passed off as an upstream input'
+      );
+      // Upstream inputs are filled first and are never displaced by the revision.
+      assert.ok(
+        ['requirements-spec', 'acceptance-criteria', 'codebase-map', 'project-context']
+          .every((id) => back.bundle.artifacts.some((a) => a.id === id)),
+        'returning a draft must not crowd out the specification it is measured against'
+      );
+      assert.ok(
+        back.bundle.budget.used <= back.bundle.budget.limit,
+        `bundle overran its budget: ${back.bundle.budget.used} > ${back.bundle.budget.limit}`
+      );
+      // Nothing outside this run's own record may pose as a draft.
+      assert.ok(
+        back.bundle.priorOutputs.every((a) => cur.artifacts[a.id]),
+        'a returned draft must be one this run recorded producing'
+      );
       console.log('✓ changes_requested returned the stage to architect with feedback attached');
+      console.log(`✓ re-entry returned the agent's own ${back.bundle.priorOutputs.length} prior artifacts, inputs intact and within budget`);
       continue;
     }
     // Exercise a real 'chat' decision once, on the review gate — proving the

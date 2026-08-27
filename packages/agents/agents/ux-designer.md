@@ -7,7 +7,7 @@ stages: [ux_lofi, ux_midfi, ux_hifi]
 model: gpt-5
 context:
   reads:
-    artifacts: [requirements-spec, acceptance-criteria, project-context, architecture-spec, ux-lofi, ux-midfi]
+    artifacts: [requirements-spec, acceptance-criteria, project-context, architecture-spec, ux-lofi, ux-midfi, ux-hifi, design-tokens]
     mcp:
       - figma_get_file
       - figma_get_file_nodes

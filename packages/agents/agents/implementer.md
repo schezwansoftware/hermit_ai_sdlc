@@ -7,7 +7,7 @@ stages: [implementation_ui, implementation_backend]
 model: gpt-5
 context:
   reads:
-    artifacts: [work-plan, architecture-spec, acceptance-criteria, ux-hifi, design-tokens, change-set-ui]
+    artifacts: [work-plan, architecture-spec, acceptance-criteria, ux-hifi, design-tokens, change-set-ui, change-set]
     mcp:
       - jira_get_issue
       - jira_update_issue

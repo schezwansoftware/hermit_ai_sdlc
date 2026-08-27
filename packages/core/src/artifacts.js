@@ -44,6 +44,20 @@ export function readArtifact(paths, runId, artifactId) {
 }
 
 /**
+ * Read an artifact produced by *this run only*, with no fallback to the
+ * repository-level stores.
+ *
+ * `readArtifact` deliberately falls back so every run inherits the shared
+ * onboarding and security baseline. When the question is "what did this run
+ * write earlier", that fallback would answer with someone else's document —
+ * so this is the read to use for a stage revisiting its own output.
+ */
+export function readRunArtifact(paths, runId, artifactId) {
+  const file = artifactFile(paths, runId, artifactId);
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+}
+
+/**
  * Persist an artifact and return its metadata record.
  * @returns {{ id:string, file:string, sha256:string, bytes:number, updatedAt:string, producedBy:string|null }}
  */

@@ -7,7 +7,7 @@ stages: [architecture]
 model: gpt-5
 context:
   reads:
-    artifacts: [requirements-spec, acceptance-criteria, codebase-map, project-context]
+    artifacts: [requirements-spec, acceptance-criteria, codebase-map, project-context, architecture-spec, adr, impact-analysis]
     mcp:
       - confluence_search
       - confluence_get_page

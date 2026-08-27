@@ -1,10 +1,18 @@
-import { readArtifact } from './artifacts.js';
-import { artifactSpec } from './artifacts.js';
+import { readArtifact, readRunArtifact, artifactSpec } from './artifacts.js';
 import { criterionApplies } from './criteria.js';
 import { effectiveMcpTools } from './servers.js';
 import { scopePathsToProjects } from './projects.js';
 
 const DEFAULT_BUDGET = 120_000; // characters of artifact text per bundle
+
+/**
+ * Share of the budget a stage's own prior drafts may take.
+ *
+ * Upstream inputs are filled first and are never displaced: a revision that
+ * crowded out the specification it is being measured against would trade one
+ * kind of blindness for another.
+ */
+const REVISION_BUDGET_RATIO = 0.4;
 
 /**
  * Materialise the *only* context an agent is allowed to see for a stage.
@@ -15,6 +23,13 @@ const DEFAULT_BUDGET = 120_000; // characters of artifact text per bundle
  *
  * An artifact must appear in both to be included. That way neither a pipeline
  * edit nor an agent edit alone can widen a role's blast radius.
+ *
+ * A stage on its second or later attempt additionally gets back the artifacts
+ * *it already produced in this run* (`priorOutputs`), still subject to the
+ * agent's own read scope. This is not a widening: the agent wrote those
+ * documents, and returning them is what makes a revision a revision rather
+ * than a fresh reconstruction. On a first attempt the set is always empty, so
+ * a normal run carries no extra context for it.
  */
 export function buildContextBundle({ paths, run, stage, agent, registry, budget = DEFAULT_BUDGET }) {
   const stageInputs = stage.inputs ?? [];
@@ -23,27 +38,31 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
   const deniedByAgent = stageInputs.filter((id) => !agentReads.includes(id));
 
   const artifacts = [];
-  let spent = 0;
-  let truncated = false;
+  const spend = { used: 0, truncated: false };
 
   for (const id of allowed) {
     const content = readArtifact(paths, run.id, id);
     if (content === null) continue;
-    const remaining = budget - spent;
-    const clipped = content.length > remaining;
-    if (clipped) truncated = true;
-    const text = clipped ? content.slice(0, Math.max(0, remaining)) + '\n\n…[truncated by context budget]' : content;
-    spent += text.length;
-    artifacts.push({
-      id,
-      title: artifactSpec(id).title,
-      format: artifactSpec(id).format,
-      truncated: clipped,
-      content: text
-    });
+    artifacts.push(clip(id, content, budget, spend));
   }
 
   const missing = allowed.filter((id) => !artifacts.some((a) => a.id === id));
+
+  // A stage sent back for changes gets its own last draft returned to it.
+  // Without this the agent rebuilds the artifact from the brief alone, and any
+  // detail it decided last time that the brief does not carry — a resolved
+  // ambiguity, a numbered decision — is silently lost and re-litigated.
+  const attempt = run.stages?.[stage.id]?.attempts ?? 1;
+  const priorOutputs = [];
+  if (attempt > 1) {
+    const alreadyBundled = new Set(artifacts.map((a) => a.id));
+    const revisionCap = Math.min(budget, spend.used + Math.floor(budget * REVISION_BUDGET_RATIO));
+    for (const id of priorOutputIds({ run, stage, agentReads, alreadyBundled })) {
+      const content = readRunArtifact(paths, run.id, id);
+      if (content === null) continue;
+      priorOutputs.push(clip(id, content, revisionCap, spend));
+    }
+  }
 
   // Narrow declared path globs to the projects this run targets, so an agent
   // working on the API is not handed the whole monorepo.
@@ -60,7 +79,9 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
     intent: run.intent,
     jiraKey: run.jiraKey,
     flags: run.flags,
+    attempt,
     artifacts,
+    priorOutputs,
     missingInputs: missing,
     withheld: deniedByAgent,
     allowedMcpTools: effectiveMcpTools(agent?.context?.reads?.mcp ?? []),
@@ -68,8 +89,48 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
     writablePaths: scopePathsToProjects(agent?.context?.writes?.paths ?? [], projects, selected),
     skills: (agent?.skills ?? []).map((id) => registry.skillsById[id]).filter(Boolean).map(pick),
     knowledge: (agent?.knowledge ?? []).map((id) => registry.knowledgeById[id]).filter(Boolean).map(pick),
-    budget: { limit: budget, used: spent, truncated }
+    budget: { limit: budget, used: spend.used, truncated: spend.truncated }
   };
+}
+
+/**
+ * Which of this stage's outputs may be handed back as the agent's prior draft.
+ *
+ * Four conditions, each closing off a different way the wrong document could
+ * arrive: the role must already be entitled to read it, it must not duplicate
+ * something bundled as an input, **this run** must have produced it (a
+ * recorded metadata entry, not merely a file on disk — which is what keeps a
+ * shared onboarding or security-baseline document from posing as a draft), and
+ * it must not be empty.
+ */
+function priorOutputIds({ run, stage, agentReads, alreadyBundled }) {
+  return (stage.outputs ?? []).filter(
+    (id) =>
+      agentReads.includes(id) &&
+      !alreadyBundled.has(id) &&
+      ((run.artifacts?.[id]?.bytes ?? 0) > 0)
+  );
+}
+
+/** Fit one artifact into the remaining allowance, recording what it spent. */
+function clip(id, content, cap, spend) {
+  const remaining = Math.max(0, cap - spend.used);
+  const truncated = content.length > remaining;
+  if (truncated) spend.truncated = true;
+  const text = truncated
+    ? content.slice(0, remaining) + '\n\n…[truncated by context budget]'
+    : content;
+  spend.used += text.length;
+  return { id, title: artifactSpec(id).title, format: artifactSpec(id).format, truncated, content: text };
+}
+
+function renderArtifact(out, heading, a) {
+  out.push(`### ${heading} — ${a.title}${a.truncated ? ' (truncated)' : ''}`);
+  out.push('');
+  out.push(a.format === 'json' ? '```json' : '```markdown');
+  out.push(a.content.trimEnd());
+  out.push('```');
+  out.push('');
 }
 
 function pick(doc) {
@@ -145,14 +206,7 @@ export function renderBundle(bundle, { playbook, contract }) {
   if (!bundle.artifacts.length) {
     out.push('_No upstream artifacts. Gather what you need through your allowed MCP tools and the repository._');
   }
-  for (const a of bundle.artifacts) {
-    out.push(`### Artifact: ${a.id} — ${a.title}${a.truncated ? ' (truncated)' : ''}`);
-    out.push('');
-    out.push(a.format === 'json' ? '```json' : '```markdown');
-    out.push(a.content.trimEnd());
-    out.push('```');
-    out.push('');
-  }
+  for (const a of bundle.artifacts) renderArtifact(out, `Artifact: ${a.id}`, a);
   if (bundle.missingInputs.length) {
     out.push(`> **Missing inputs**: ${bundle.missingInputs.join(', ')} — these were expected but have not been produced yet.`);
     out.push('');
@@ -160,6 +214,16 @@ export function renderBundle(bundle, { playbook, contract }) {
   if (bundle.withheld.length) {
     out.push(`> **Withheld**: ${bundle.withheld.join(', ')} — outside your role's read scope. Do not ask another agent to relay them.`);
     out.push('');
+  }
+
+  if (bundle.priorOutputs?.length) {
+    out.push(`## What you submitted last time (attempt ${bundle.attempt - 1})`);
+    out.push('');
+    out.push('This is your own previous draft of this stage, returned to you because it was sent back for changes. **Revise it — do not rewrite it from memory.** Anything the feedback does not ask you to change should come back unchanged, and any decision you already recorded here stays recorded, with its original wording and numbering.');
+    out.push('');
+    out.push('If a section arrives truncated, say so rather than reconstructing what is missing.');
+    out.push('');
+    for (const a of bundle.priorOutputs) renderArtifact(out, `Your previous ${a.id}`, a);
   }
 
   out.push('## Tool scope');

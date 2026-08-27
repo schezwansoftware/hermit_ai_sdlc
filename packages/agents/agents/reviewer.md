@@ -7,7 +7,7 @@ stages: [review]
 model: gpt-5
 context:
   reads:
-    artifacts: [change-set, change-set-ui, architecture-spec, acceptance-criteria, work-plan]
+    artifacts: [change-set, change-set-ui, architecture-spec, acceptance-criteria, work-plan, review-report]
     mcp:
       - jira_get_issue
       - jira_add_comment
