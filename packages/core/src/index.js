@@ -6,6 +6,7 @@ export * from './artifacts.js';
 export * from './criteria.js';
 export * from './codebase-snapshot.js';
 export * from './exit-checklist.js';
+export * from './guidance-query.js';
 export * from './state.js';
 export * from './gates.js';
 export * from './context.js';
