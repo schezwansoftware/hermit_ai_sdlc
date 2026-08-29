@@ -2,8 +2,9 @@ import { readArtifact, readRunArtifact, artifactSpec } from './artifacts.js';
 import { criterionApplies } from './criteria.js';
 import { effectiveMcpTools } from './servers.js';
 import { scopePathsToProjects } from './projects.js';
+import { scopeArtifacts, scopeKnowledge, scopeSkills, scopePaths, estimateTokens, scopingTelemetry } from './context-scoping.js';
 
-const DEFAULT_BUDGET = 120_000; // characters of artifact text per bundle
+const DEFAULT_BUDGET = 20_000; // characters of artifact text per bundle (P0-0: reduced from 120k)
 
 /**
  * Share of the budget a stage's own prior drafts may take.
@@ -17,12 +18,12 @@ const REVISION_BUDGET_RATIO = 0.4;
 /**
  * Materialise the *only* context an agent is allowed to see for a stage.
  *
- * Scoping is an intersection of two independent declarations:
- *   1. the pipeline stage's `inputs`  (what this step of the workflow needs)
- *   2. the agent's `context.reads.artifacts` (what this role is entitled to)
+ * P0-0 Context Scoping: Delivers only what the agent's role needs, reducing bloat.
  *
- * An artifact must appear in both to be included. That way neither a pipeline
- * edit nor an agent edit alone can widen a role's blast radius.
+ * Scoping is an intersection of three layers:
+ *   1. the pipeline stage's `inputs` (what this step of the workflow needs)
+ *   2. the agent's `context.reads.artifacts` (what this role is entitled to)
+ *   3. the agent's role type (what context categories they actually use)
  *
  * A stage on its second or later attempt additionally gets back the artifacts
  * *it already produced in this run* (`priorOutputs`), still subject to the
@@ -37,10 +38,14 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
   const allowed = stageInputs.filter((id) => agentReads.includes(id));
   const deniedByAgent = stageInputs.filter((id) => !agentReads.includes(id));
 
+  // P0-0: Filter artifacts to what this agent's role actually needs
+  const artifactList = allowed.map((id) => ({ id }));
+  const scopedArtifactIds = scopeArtifacts(artifactList, agent?.id, stage).map((a) => a.id);
+
   const artifacts = [];
   const spend = { used: 0, truncated: false };
 
-  for (const id of allowed) {
+  for (const id of scopedArtifactIds) {
     const content = readArtifact(paths, run.id, id);
     if (content === null) continue;
     artifacts.push(clip(id, content, budget, spend));
@@ -70,7 +75,18 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
   const selected = run.selectedProjects ?? [];
   const inScope = projects.filter((p) => selected.includes(p.id));
 
-  return {
+  // P0-0: Scope knowledge and skills to what the agent needs
+  const rawSkills = (agent?.skills ?? []).map((id) => registry.skillsById[id]).filter(Boolean).map(pick);
+  const rawKnowledge = (agent?.knowledge ?? []).map((id) => registry.knowledgeById[id]).filter(Boolean).map(pick);
+  const scopedSkills = scopeSkills(rawSkills, agent?.id);
+  const scopedKnowledge = scopeKnowledge(rawKnowledge, stage);
+
+  // P0-0: Scope paths to what this agent's role uses
+  const readablePaths = scopePathsToProjects(agent?.context?.reads?.paths ?? [], projects, selected);
+  const scopedReadable = scopePaths(readablePaths, agent?.id);
+  const writablePaths = scopePathsToProjects(agent?.context?.writes?.paths ?? [], projects, selected);
+
+  const bundle = {
     runId: run.id,
     monorepo: Boolean(run.monorepo),
     projects: inScope.map((p) => ({ id: p.id, path: p.path, kind: p.kind, stack: p.stack, ui: p.ui })),
@@ -85,12 +101,35 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
     missingInputs: missing,
     withheld: deniedByAgent,
     allowedMcpTools: effectiveMcpTools(agent?.context?.reads?.mcp ?? []),
-    readablePaths: scopePathsToProjects(agent?.context?.reads?.paths ?? [], projects, selected),
-    writablePaths: scopePathsToProjects(agent?.context?.writes?.paths ?? [], projects, selected),
-    skills: (agent?.skills ?? []).map((id) => registry.skillsById[id]).filter(Boolean).map(pick),
-    knowledge: (agent?.knowledge ?? []).map((id) => registry.knowledgeById[id]).filter(Boolean).map(pick),
+    readablePaths: scopedReadable,
+    writablePaths: writablePaths,
+    skills: scopedSkills,
+    knowledge: scopedKnowledge,
     budget: { limit: budget, used: spend.used, truncated: spend.truncated }
   };
+
+  // P0-0: Log telemetry on scoping effectiveness (calculate actual content size, not JSON overhead)
+  let beforeSize = 0;
+  for (const id of allowed) {
+    const content = readArtifact(paths, run.id, id);
+    if (content) beforeSize += content.length;
+  }
+  beforeSize += rawKnowledge.reduce((sum, k) => sum + (k.body?.length ?? 0), 0);
+  beforeSize += rawSkills.reduce((sum, s) => sum + (s.body?.length ?? 0), 0);
+
+  let afterSize = artifacts.reduce((sum, a) => sum + (a.content?.length ?? 0), 0);
+  afterSize += priorOutputs.reduce((sum, a) => sum + (a.content?.length ?? 0), 0);
+  afterSize += scopedKnowledge.reduce((sum, k) => sum + (k.body?.length ?? 0), 0);
+  afterSize += scopedSkills.reduce((sum, s) => sum + (s.body?.length ?? 0), 0);
+
+  bundle._scopingTelemetry = scopingTelemetry({
+    before: beforeSize,
+    after: afterSize,
+    agentId: agent?.id,
+    stageId: stage?.id
+  });
+
+  return bundle;
 }
 
 /**
