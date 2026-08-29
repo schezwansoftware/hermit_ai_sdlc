@@ -12,7 +12,7 @@
  * while a Backend Developer needs the opposite. This mapping avoids delivering
  * 100% of context to every role.
  */
-export function contextNeeds(agentId, stage, run) {
+export function contextNeeds(agentId, stage) {
   const agent = agentId?.toLowerCase() ?? '';
   const role = stage?.agent?.toLowerCase() ?? '';
 
@@ -114,7 +114,7 @@ export function scopePaths(paths, agentId) {
   for (const p of paths) {
     // UI agents get ui paths; backend gets api/packages
     if (agent.includes('ui') || agent.includes('design') || agent.includes('frontend')) {
-      if (p.match(/^app.*\/ui|design|frontend|web/i)) filtered.push(p);
+      if (p.match(/^app.*\/(ui|design|frontend|web)/i)) filtered.push(p);
     } else if (agent.includes('backend') || agent.includes('api')) {
       if (p.match(/^app.*\/(api|server|backend|packages|core)/i)) filtered.push(p);
     } else {
@@ -158,7 +158,7 @@ export function estimateTokens(bundle) {
  * If the budget is still exceeded after scoping, this helps diagnose it.
  */
 export function scopingTelemetry({ before, after, agentId, stageId }) {
-  const reduction = Math.round(((before - after) / before) * 100);
+  const reduction = before === 0 ? 0 : Math.round(((before - after) / before) * 100);
   return {
     agentId,
     stageId,

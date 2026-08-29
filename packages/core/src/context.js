@@ -108,7 +108,7 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
     budget: { limit: budget, used: spend.used, truncated: spend.truncated }
   };
 
-  // P0-0: Log telemetry on scoping effectiveness
+  // P0-0: Log telemetry on scoping effectiveness (calculate actual content size, not JSON overhead)
   let beforeSize = 0;
   for (const id of allowed) {
     const content = readArtifact(paths, run.id, id);
