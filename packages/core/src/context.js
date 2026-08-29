@@ -2,6 +2,7 @@ import { readArtifact, readRunArtifact, artifactSpec } from './artifacts.js';
 import { criterionApplies } from './criteria.js';
 import { effectiveMcpTools } from './servers.js';
 import { scopePathsToProjects } from './projects.js';
+import { renderChecklistSection } from './exit-checklist.js';
 import { scopeArtifacts, scopeKnowledge, scopeSkills, scopePaths, estimateTokens, scopingTelemetry } from './context-scoping.js';
 
 const DEFAULT_BUDGET = 20_000; // characters of artifact text per bundle (P0-0: reduced from 120k)
@@ -271,6 +272,12 @@ export function renderBundle(bundle, { playbook, contract }) {
   out.push(`- **Readable paths**: ${bundle.readablePaths.length ? bundle.readablePaths.join(', ') : 'repository default'}`);
   out.push(`- **Writable paths**: ${bundle.writablePaths.length ? bundle.writablePaths.join(', ') : 'none — you produce artifacts, not files'}`);
   out.push('');
+
+  // P0-2: Render exit criteria as actionable checklist
+  const checklistMarkdown = renderChecklistSection(contract.exitCriteria ?? []);
+  if (checklistMarkdown) {
+    out.push(checklistMarkdown);
+  }
 
   out.push('## Required output');
   out.push('');
