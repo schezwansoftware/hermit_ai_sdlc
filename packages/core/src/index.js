@@ -7,6 +7,7 @@ export * from './criteria.js';
 export * from './state.js';
 export * from './gates.js';
 export * from './context.js';
+export * from './context-scoping.js';
 export * from './engine.js';
 export * from './servers.js';
 export * from './projects.js';
