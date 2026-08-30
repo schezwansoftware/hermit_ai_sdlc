@@ -11,7 +11,7 @@ specializes:
     kind: [frontend, mobile]
 context:
   reads:
-    artifacts: [work-plan, architecture-spec, acceptance-criteria, ux-hifi, design-tokens]
+    artifacts: [work-plan, architecture-spec, acceptance-criteria, ux-hifi, design-tokens, codebase-map]
     mcp:
       - jira_get_issue
       - jira_update_issue

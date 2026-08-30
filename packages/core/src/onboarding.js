@@ -34,7 +34,12 @@ export const ONBOARDING_STATUS = /** @type {const} */ ({
 export const ONBOARDING_CRITERIA = [
   { id: 'stack-identified', artifact: 'project-context', contains: '## Tech Stack' },
   { id: 'boundaries-mapped', artifact: 'codebase-map', contains: '## Module Boundaries' },
-  { id: 'projects-mapped', artifact: 'codebase-map', contains: '## Projects', when: { monorepo: true } }
+  { id: 'projects-mapped', artifact: 'codebase-map', contains: '## Projects', when: { monorepo: true } },
+  // P0-1: a comprehensive, searchable index of reusable units (components,
+  // utilities, services, hooks, patterns) — distinct from Module Boundaries,
+  // which only maps top-level directories. This is what lets an implementer
+  // find "is there already a button component" without reading the tree.
+  { id: 'index-comprehensive', artifact: 'codebase-map', contains: '## Index' }
 ];
 
 /**
