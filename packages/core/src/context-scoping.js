@@ -6,62 +6,27 @@
  */
 
 /**
- * Determine what context categories an agent needs based on their role.
+ * Which artifacts an agent's role actually uses.
  *
- * Each role has different needs: a UI Developer needs design specs but not API schemas,
- * while a Backend Developer needs the opposite. This mapping avoids delivering
- * 100% of context to every role.
- */
-export function contextNeeds(agentId, stage) {
-  const agent = agentId?.toLowerCase() ?? '';
-  const role = stage?.agent?.toLowerCase() ?? '';
-
-  const needs = {
-    includeArtifacts: true,
-    artifactSummary: false,  // Include full artifacts or just summaries
-    includeKnowledge: true,
-    includeSkills: true,
-    includePaths: true,
-  };
-
-  // UI-focused roles
-  if (agent.includes('ui') || agent.includes('design') || agent.includes('frontend')) {
-    needs.artifactSummary = false;  // UI needs full design details
-    needs.includeArtifacts = ['requirements-spec', 'design-doc', 'ui-lofi', 'design-tokens', 'component-catalog'];
-    return needs;
-  }
-
-  // Backend-focused roles
-  if (agent.includes('backend') || agent.includes('api') || agent.includes('database')) {
-    needs.includeArtifacts = ['requirements-spec', 'architecture-doc', 'data-model', 'api-spec', 'schema-migration'];
-    return needs;
-  }
-
-  // Architecture/planning roles
-  if (agent.includes('architect') || agent.includes('planning') || agent.includes('requirements')) {
-    needs.includeArtifacts = ['requirements-spec', 'design-doc'];
-    return needs;
-  }
-
-  // Default: include what was declared in read scope
-  needs.includeArtifacts = true;
-  return needs;
-}
-
-/**
- * Prune artifacts that are not relevant to the current stage.
+ * P0-0 originally tried to further narrow artifacts here with a hard-coded
+ * per-role allowlist (e.g. "UI roles only need these five artifact ids").
+ * That list named artifacts that do not exist in this system's registry
+ * (`design-doc`, `ui-lofi`, `architecture-doc`, `data-model`, `api-spec`,
+ * `schema-migration`, `component-catalog` are not real artifact ids — see
+ * `pipeline.js` for the real ones). Because the filter is an allowlist, an
+ * unrecognised id is silently dropped rather than flagged, so every
+ * implementation-stage agent lost most or all of its real inputs
+ * (`backend-developer` was left with zero artifacts).
  *
- * Filters the artifact list to only those the agent's role actually uses,
- * based on the stage they're working on.
+ * The correct per-role scope already exists and is accurate: it is the
+ * intersection of the pipeline stage's declared `inputs` and the agent's own
+ * `context.reads.artifacts` (computed by the caller in `buildContextBundle`
+ * before this function ever runs). Re-deriving that scope here from an
+ * agent-id string guess duplicates a mechanism that is already correct and,
+ * as shown above, duplicates it incorrectly. So this stays a pass-through:
+ * scoping happens once, where the real declarations live.
  */
-export function scopeArtifacts(artifacts, agentId, stage) {
-  const needs = contextNeeds(agentId, stage);
-
-  if (Array.isArray(needs.includeArtifacts)) {
-    return artifacts.filter((a) => needs.includeArtifacts.includes(a.id));
-  }
-
-  // If includeArtifacts is true, keep all (default behavior)
+export function scopeArtifacts(artifacts) {
   return artifacts;
 }
 
@@ -100,30 +65,24 @@ export function scopeSkills(skills, agentId) {
 }
 
 /**
- * Reduce paths to only those relevant for this stage.
+ * Which readable paths an agent's role actually uses.
  *
- * A backend stage doesn't need the `apps/web/` path. Scoped paths
- * already filter by project; this filters by agent concern.
+ * Previously tried to further narrow paths by matching a hard-coded keyword
+ * regex against the agent id (e.g. "backend" agents only get paths matching
+ * /api|server|backend|packages|core/). Real project directory names are
+ * user-defined per repo and rarely match those guessed keywords, so the
+ * filter usually produced an empty result and silently fell back to the
+ * unfiltered list — inert in the common case, but a real regression waiting
+ * to happen for a repo whose project names happen to match the guess.
+ *
+ * The correct scope already exists: `scopePathsToProjects` (in projects.js)
+ * narrows an agent's declared `context.reads.paths` to the run's selected
+ * projects, and the agent's own frontmatter declares the paths it needs.
+ * Layering a second, guessed filter on top duplicates that correctly and
+ * unreliably, so this stays a pass-through.
  */
-export function scopePaths(paths, agentId) {
-  if (!paths?.length) return paths;
-
-  const agent = agentId?.toLowerCase() ?? '';
-  const filtered = [];
-
-  for (const p of paths) {
-    // UI agents get ui paths; backend gets api/packages
-    if (agent.includes('ui') || agent.includes('design') || agent.includes('frontend')) {
-      if (p.match(/^app.*\/(ui|design|frontend|web)/i)) filtered.push(p);
-    } else if (agent.includes('backend') || agent.includes('api')) {
-      if (p.match(/^app.*\/(api|server|backend|packages|core)/i)) filtered.push(p);
-    } else {
-      // Default: include all
-      filtered.push(p);
-    }
-  }
-
-  return filtered.length ? filtered : paths;  // Fall back to all if filter is too restrictive
+export function scopePaths(paths) {
+  return paths;
 }
 
 /**
