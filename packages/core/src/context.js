@@ -3,7 +3,7 @@ import { criterionApplies } from './criteria.js';
 import { effectiveMcpTools } from './servers.js';
 import { scopePathsToProjects } from './projects.js';
 import { renderChecklistSection } from './exit-checklist.js';
-import { scopeArtifacts, scopeKnowledge, scopeSkills, scopePaths, estimateTokens, scopingTelemetry } from './context-scoping.js';
+import { scopeKnowledge, scopeSkills, estimateTokens, scopingTelemetry } from './context-scoping.js';
 import { scopeSnapshot, renderCodebaseSnapshot } from './codebase-snapshot.js';
 
 const DEFAULT_BUDGET = 20_000; // characters of artifact text per bundle (P0-0: reduced from 120k)
@@ -40,14 +40,10 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
   const allowed = stageInputs.filter((id) => agentReads.includes(id));
   const deniedByAgent = stageInputs.filter((id) => !agentReads.includes(id));
 
-  // P0-0: Filter artifacts to what this agent's role actually needs
-  const artifactList = allowed.map((id) => ({ id }));
-  const scopedArtifactIds = scopeArtifacts(artifactList, agent?.id, stage).map((a) => a.id);
-
   const artifacts = [];
   const spend = { used: 0, truncated: false };
 
-  for (const id of scopedArtifactIds) {
+  for (const id of allowed) {
     const content = readArtifact(paths, run.id, id);
     if (content === null) continue;
     artifacts.push(clip(id, content, budget, spend));
@@ -83,9 +79,7 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
   const scopedSkills = scopeSkills(rawSkills, agent?.id);
   const scopedKnowledge = scopeKnowledge(rawKnowledge, stage);
 
-  // P0-0: Scope paths to what this agent's role uses
   const readablePaths = scopePathsToProjects(agent?.context?.reads?.paths ?? [], projects, selected);
-  const scopedReadable = scopePaths(readablePaths, agent?.id);
   const writablePaths = scopePathsToProjects(agent?.context?.writes?.paths ?? [], projects, selected);
 
   const bundle = {
@@ -103,7 +97,7 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
     missingInputs: missing,
     withheld: deniedByAgent,
     allowedMcpTools: effectiveMcpTools(agent?.context?.reads?.mcp ?? []),
-    readablePaths: scopedReadable,
+    readablePaths: readablePaths,
     writablePaths: writablePaths,
     skills: scopedSkills,
     knowledge: scopedKnowledge,
