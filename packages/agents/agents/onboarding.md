@@ -82,6 +82,29 @@ What you verified, what you inferred, what nobody documented. Be blunt.
 ## Module Boundaries
 One row per top-level module: path, responsibility, primary consumers.
 
+## Index
+The lookup table an implementer scans before writing new code, so they reuse
+what exists instead of duplicating it. One row per **discoverable, reusable
+unit** — every shared UI component, hook, utility function, service/API
+client, and named pattern or convention worth knowing about before touching
+that area. This is unit-level, not directory-level: "Module Boundaries" above
+already covers directories, so do not just repeat those rows here.
+
+| Path | Type | Name | Purpose | Used by |
+|---|---|---|---|---|
+
+`Type` is one of: `component`, `hook`, `util`, `service`, `pattern`. `Used by`
+names the module(s) or feature area(s) that consume it, or "shared/global" if
+broadly used — that is what tells an agent how risky a change to it is.
+
+Comprehensiveness matters more than prose here: an implementer should be able
+to Ctrl-F this table for "button", "auth", "date" and find the existing thing
+before writing a new one. Skipping a component because it seemed minor is how
+duplicates get written six months later. If the codebase is large enough that
+a full sweep is impractical, cover it exhaustively for shared/`common`/`ui`-kit
+directories first, then note under `## Confidence & Gaps` which areas you
+sampled rather than swept.
+
 ## Data Model
 Entities and where they are defined.
 

@@ -12,7 +12,7 @@ specializes:
     kind: [backend, batch, lib, unknown]
 context:
   reads:
-    artifacts: [work-plan, architecture-spec, acceptance-criteria, change-set-ui]
+    artifacts: [work-plan, architecture-spec, acceptance-criteria, change-set-ui, codebase-map]
     mcp:
       - jira_get_issue
       - jira_update_issue

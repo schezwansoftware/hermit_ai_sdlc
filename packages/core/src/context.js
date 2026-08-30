@@ -4,7 +4,6 @@ import { effectiveMcpTools } from './servers.js';
 import { scopePathsToProjects } from './projects.js';
 import { renderChecklistSection } from './exit-checklist.js';
 import { scopeArtifacts, scopeKnowledge, scopeSkills, scopePaths, estimateTokens, scopingTelemetry } from './context-scoping.js';
-import { scopeSnapshot, renderCodebaseSnapshot } from './codebase-snapshot.js';
 
 const DEFAULT_BUDGET = 20_000; // characters of artifact text per bundle (P0-0: reduced from 120k)
 
@@ -130,11 +129,6 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
     agentId: agent?.id,
     stageId: stage?.id
   });
-
-  // P0-1: Include codebase snapshot for agents that need it
-  if (run.codebaseSnapshot) {
-    bundle.codebaseSnapshot = scopeSnapshot(run.codebaseSnapshot, agent?.id);
-  }
 
   return bundle;
 }

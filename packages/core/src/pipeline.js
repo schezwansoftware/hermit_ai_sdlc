@@ -160,7 +160,7 @@ export const DEFAULT_PIPELINE = {
       gate: 'auto',
       optional: true,
       skipWhen: 'no-ui',
-      inputs: ['work-plan', 'architecture-spec', 'acceptance-criteria', 'ux-hifi', 'design-tokens'],
+      inputs: ['work-plan', 'architecture-spec', 'acceptance-criteria', 'ux-hifi', 'design-tokens', 'codebase-map'],
       outputs: ['change-set-ui'],
       exitCriteria: [
         { id: 'ui-changeset-written', type: 'artifact_exists', artifact: 'change-set-ui' },
@@ -177,7 +177,7 @@ export const DEFAULT_PIPELINE = {
       gate: 'auto',
       optional: true,
       skipWhen: 'ui-only',
-      inputs: ['work-plan', 'architecture-spec', 'acceptance-criteria', 'change-set-ui'],
+      inputs: ['work-plan', 'architecture-spec', 'acceptance-criteria', 'change-set-ui', 'codebase-map'],
       outputs: ['change-set'],
       exitCriteria: [
         { id: 'changeset-written', type: 'artifact_exists', artifact: 'change-set' },
