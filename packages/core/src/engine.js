@@ -276,7 +276,7 @@ export function submitArtifact({ paths, run, registry, pipeline = DEFAULT_PIPELI
  * Agent asks to move on. Exit criteria are evaluated first; a HITL stage then
  * opens a gate instead of advancing.
  */
-export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELINE, agentId, summary = null }) {
+export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELINE, agentId, summary = null, thinking = null }) {
   reconcile(paths, run, pipeline);
   const stage = getStage(pipeline, run.currentStage);
   if (!stage) return { state: 'complete', message: `Run ${run.id} is already complete.` };
@@ -295,8 +295,17 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
     };
   }
 
-  if (summary) {
-    journal(paths, run.id, { event: 'stage.summary', stage: stage.id, agent: agentId, summary });
+  // `thinking` is the model's own account of its reasoning — why it chose
+  // what it chose, what it considered and rejected, what it is unsure of.
+  // Hermit cannot see inside a model's reasoning any other way: this is a
+  // narration written deliberately, not a raw capture of anything. Recorded
+  // only once exit criteria pass — that is the moment a stage is genuinely
+  // done or paused for a human, which is when the reasoning behind it is
+  // worth keeping. A rejected handoff means the agent is about to try
+  // again in the same attempt; its next call is where the real account
+  // belongs.
+  if (summary || thinking) {
+    journal(paths, run.id, { event: 'stage.summary', stage: stage.id, agent: agentId, summary, thinking });
   }
 
   if (stageNeedsGate(stage, { paths, run })) {

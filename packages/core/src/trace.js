@@ -23,7 +23,7 @@ export function runTrace(paths, run, pipeline = DEFAULT_PIPELINE) {
     if (!st) return null;
     let a = st.attempts.find((x) => x.attempt === attempt);
     if (!a) {
-      a = { attempt, startedAt: null, context: null, submissions: [], rejections: [], decisions: [], completedAt: null };
+      a = { attempt, startedAt: null, context: null, submissions: [], rejections: [], decisions: [], summary: null, thinking: null, completedAt: null };
       st.attempts.push(a);
     }
     return a;
@@ -56,6 +56,19 @@ export function runTrace(paths, run, pipeline = DEFAULT_PIPELINE) {
         const st = byStage.get(e.stage);
         const a = st?.attempts[st.attempts.length - 1];
         if (a) a.submissions.push({ at: e.at, artifact: e.artifact, bytes: e.bytes });
+        break;
+      }
+      case 'stage.summary': {
+        // The model's own account of its reasoning, written deliberately on
+        // the handoff call that got criteria to pass — the only record of
+        // "why" Hermit can ever have, since it cannot see inside a model's
+        // actual thinking.
+        const st = byStage.get(e.stage);
+        const a = st?.attempts[st.attempts.length - 1];
+        if (a) {
+          a.summary = e.summary ?? a.summary;
+          a.thinking = e.thinking ?? a.thinking;
+        }
         break;
       }
       case 'handoff.rejected': {

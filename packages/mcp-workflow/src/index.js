@@ -173,13 +173,20 @@ const tools = [
     title: 'Request handoff',
     description:
       'Ask to advance. Exit criteria are checked first. Returns blocked (with the failing criteria), ' +
-      'awaiting_gate (a human must approve), or advanced (the next agent takes over).',
+      'awaiting_gate (a human must approve), or advanced (the next agent takes over). Always pass ' +
+      '`thinking` when criteria pass — it is the only record of your reasoning Hermit can ever have; ' +
+      'a raw capture of a model\'s thinking is not something a tool call can carry.',
     input: {
       agent: z.string().describe('Your agent id'),
-      summary: z.string().optional().describe('One-paragraph summary of what you did, recorded in the journal')
+      summary: z.string().optional().describe('One-paragraph summary of what you did, recorded in the journal'),
+      thinking: z.string().optional().describe(
+        'Always include this. Why you made the choices you made — alternatives you considered and ' +
+        'rejected, and anything you are unsure of. This is what a human debugging this stage later, ' +
+        'through hermit_trace, actually has to go on.'
+      )
     },
-    handler: ({ agent, summary }) =>
-      withRun((run, reg) => requestHandoff({ paths, run, registry: reg, agentId: agent, summary }))
+    handler: ({ agent, summary, thinking }) =>
+      withRun((run, reg) => requestHandoff({ paths, run, registry: reg, agentId: agent, summary, thinking }))
   },
   {
     name: 'hermit_get_artifact',
@@ -470,10 +477,11 @@ const tools = [
     description:
       'Post-run debugging: for each stage, every attempt it took, what context it was actually handed ' +
       '(artifact ids and sizes offered — not full content), what it submitted, why any handoff was ' +
-      'rejected, and the reasoning behind every gate decision and guidance answer on it. Same journal ' +
-      'hermit_journal exposes flat and chronological, grouped instead by stage and attempt — the shape ' +
-      'a "why did this stage go wrong" question actually needs. Reflects what was offered to an agent, ' +
-      'not what it actually read from that offer — the pipeline cannot see inside a model\'s reasoning.',
+      'rejected, the reasoning behind every gate decision and guidance answer on it, and the model\'s ' +
+      'own `thinking` from the handoff that completed it — the one account of "why" Hermit can ever ' +
+      'have, since it cannot see inside a model\'s actual reasoning, only what the model chooses to ' +
+      'write down. Same journal hermit_journal exposes flat and chronological, grouped instead by stage ' +
+      'and attempt — the shape a "why did this stage go wrong" question actually needs.',
     readOnly: true,
     input: { runId: z.string().optional().describe('Defaults to the active run') },
     handler: ({ runId }) => {

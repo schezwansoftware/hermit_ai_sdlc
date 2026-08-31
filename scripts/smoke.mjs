@@ -353,7 +353,11 @@ for (let guard = 0; guard < 40; guard++) {
     if (!BODIES[out]) throw new Error(`smoke test has no body for artifact "${out}"`);
     submitArtifact({ paths, run: cur, registry: reg, artifactId: out, content: BODIES[out], agentId: stage.agent });
   }
-  const h = requestHandoff({ paths, run: loadRun(paths, run.id), registry: reg, agentId: stage.agent, summary: `did ${stage.id}` });
+  const h = requestHandoff({
+    paths, run: loadRun(paths, run.id), registry: reg, agentId: stage.agent,
+    summary: `did ${stage.id}`,
+    thinking: `Chose the straightforward approach for ${stage.id}; nothing ambiguous enough to flag.`
+  });
   assert.ok(['advanced', 'awaiting_gate', 'complete'].includes(h.state), `handoff refused at ${stage.id}: ${h.message}`);
   stagesDone++;
 }
@@ -387,11 +391,18 @@ console.log(`✓ run completed: ${final.artifacts.length} artifacts`);
     "the attempt a gate decided on must carry the actual reasoning, not just that a decision happened"
   );
   assert.ok(arch.attempts[1].completedAt, 'a completed attempt must record when');
+  // Every successful handoff in this run passed `thinking` — the model's own
+  // account of its reasoning, the only record of "why" Hermit can ever have.
+  assert.ok(
+    arch.attempts[1].thinking?.includes('architecture'),
+    "the model's own reasoning must be recorded on the attempt that actually completed"
+  );
+  assert.equal(arch.attempts[1].summary, 'did architecture', 'summary and thinking are recorded independently');
 
   const last = lastAttemptTrace(paths, loadRun(paths, run.id), 'architecture');
   assert.equal(last.attempt, arch.attempts[1].attempt, 'lastAttemptTrace must return the same attempt as the trace\'s last one');
 
-  console.log('✓ agent thinking trace: context and decision reasoning recorded per stage attempt');
+  console.log('✓ agent thinking trace: context, decision reasoning and the model\'s own thinking recorded per stage attempt');
 }
 
 console.log('\nALL SMOKE CHECKS PASSED');
