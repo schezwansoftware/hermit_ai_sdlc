@@ -29,7 +29,10 @@ export const SERVERS = {
       'hermit_submit_onboarding',
       'hermit_security_task',
       'hermit_submit_security',
-      'hermit_decide_gate'
+      'hermit_decide_gate',
+      'hermit_ask_guidance',
+      'hermit_guidance_status',
+      'hermit_answer_guidance'
     ]
   },
   jira: {
@@ -171,7 +174,13 @@ export const PROTOCOL_TOOLS = Object.freeze([
   'hermit_request_handoff',
   'hermit_get_artifact',
   'hermit_gate_status',
-  'hermit_get_agent'
+  'hermit_get_agent',
+  // Asking and reading guidance queries is part of the protocol floor, same
+  // as gate status: any agent may hit a fork specific enough to ask about.
+  // Answering is not — see hermit_answer_guidance, declared per-agent like
+  // hermit_decide_gate.
+  'hermit_ask_guidance',
+  'hermit_guidance_status'
 ]);
 
 /**

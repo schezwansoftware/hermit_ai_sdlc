@@ -23,6 +23,10 @@ import {
   getStage,
   decideGate,
   resolveDecider,
+  askGuidance,
+  answerGuidance,
+  openGuidanceQueries,
+  getGuidanceQuery,
   onboardingStatus,
   writeOnboardingArtifact,
   readOnboardingArtifact,
@@ -288,6 +292,119 @@ const tools = [
           decision: gate.decision,
           by: gate.decidedBy,
           message: `${gate.decision} recorded for "${gate.stageTitle}" via chat, decided by ${by}.`
+        };
+      })
+  },
+  {
+    name: 'hermit_ask_guidance',
+    title: 'Ask a mid-stage guidance question',
+    description:
+      'Ask a specific, answerable question mid-stage without opening a gate — "should the retry use ' +
+      'exponential backoff or a fixed interval?", not "what do you think?". A gate blocks the whole ' +
+      'run for a human decision; this does not block anything by itself and is answered best-effort. ' +
+      'A vague or open-ended question is refused outright so the round trip is never wasted on ' +
+      'something that would just relocate the ambiguity instead of resolving it.',
+    input: {
+      agentId: z.string().describe('Your agent id'),
+      question: z.string().describe('A specific question, 10-500 characters'),
+      context: z.string().optional().describe('Relevant context — what you already know, what you tried'),
+      priority: z.enum(['urgent', 'normal', 'low']).optional().describe('Defaults to normal')
+    },
+    handler: ({ agentId, question, context, priority }) =>
+      withRun((run) => {
+        const stage = getStage(DEFAULT_PIPELINE, run.currentStage);
+        if (!stage) return { state: 'no_active_stage', message: `Run ${run.id} has no active stage.` };
+        let query;
+        try {
+          query = askGuidance(paths, run, { agentId, stageId: stage.id, question, context, priority });
+        } catch (err) {
+          return { state: 'refused', message: err.message };
+        }
+        saveRun(paths, run);
+        return {
+          queryId: query.id,
+          status: 'submitted',
+          expectedResponseTime: '< 5 minutes, best-effort',
+          message: `Question recorded as ${query.id}. Call hermit_guidance_status to check for an answer, or keep working on other parts of the stage in the meantime.`
+        };
+      })
+  },
+  {
+    name: 'hermit_guidance_status',
+    title: 'Guidance query status',
+    description:
+      'Open and answered guidance questions for the active run. READ ONLY: this tool cannot answer ' +
+      'anything. An answer comes from a person in a terminal, or from the orchestrator calling ' +
+      'hermit_answer_guidance after a human has said what to answer and confirmed the call.',
+    readOnly: true,
+    input: { stageId: z.string().optional().describe('Defaults to every stage in the run') },
+    handler: ({ stageId }) =>
+      withRun((run) => ({
+        open: openGuidanceQueries(run, stageId ?? null).map((q) => ({
+          id: q.id, stage: q.stageId, agent: q.agentId, question: q.question, priority: q.priority,
+          submittedAt: q.submittedAt,
+          answerWith: `hermit_answer_guidance { queryId: "${q.id}", answer: "..." }`
+        })),
+        answered: (run.guidanceQueries ?? [])
+          .filter((q) => q.respondedAt !== null && (!stageId || q.stageId === stageId))
+          .map((q) => ({
+            id: q.id, stage: q.stageId, question: q.question,
+            answer: q.answer, answeredBy: q.answeredBy, at: q.respondedAt, source: q.source
+          }))
+      }))
+  },
+  {
+    name: 'hermit_answer_guidance',
+    title: 'Answer a guidance query — orchestrator only, requires human confirmation',
+    description:
+      'Answer an open guidance question, from chat instead of a terminal. Not a shortcut for your own ' +
+      'judgement: call it only in the same turn a human has explicitly told you what to answer. The ' +
+      'host will ask them to confirm before it runs. Reachable by the orchestrator only; a role agent ' +
+      'that finds an open question waiting on someone else reports it and stops.',
+    input: {
+      queryId: z.string().optional().describe('Defaults to the single open query, if there is exactly one'),
+      answer: z.string().describe('The human\'s answer'),
+      answeredBy: z.string().optional().describe('The human\'s name. Defaults to the workspace git identity'),
+      agent: z.string().describe('Must be "orchestrator" — role agents cannot answer a guidance query')
+    },
+    handler: ({ queryId, answer, answeredBy, agent }) =>
+      withRun((run) => {
+        if (agent !== 'orchestrator') {
+          return {
+            state: 'denied',
+            message:
+              'Only the orchestrator answers a guidance query. If you are a role agent, stop and report ' +
+              'the open question to the orchestrator instead of trying to resolve it yourself.'
+          };
+        }
+        const open = openGuidanceQueries(run);
+        const target = queryId ?? (open.length === 1 ? open[0].id : null);
+        if (!target) {
+          return open.length
+            ? { state: 'ambiguous', message: `Multiple questions are open: ${open.map((q) => q.id).join(', ')}. Name one.` }
+            : { state: 'no_open_query', message: 'No guidance query is currently open.' };
+        }
+        if (!getGuidanceQuery(run, target)) {
+          return { state: 'not_found', message: `Guidance query "${target}" not found in this run.` };
+        }
+
+        const by = resolveDecider(paths.root, answeredBy);
+        if (!by) {
+          return { state: 'denied', message: 'Could not determine who is answering. Ask the human for their name and pass answeredBy.' };
+        }
+
+        let query;
+        try {
+          query = answerGuidance(paths, run, target, { answeredBy: by, answer, source: 'chat' });
+        } catch (err) {
+          return { state: 'refused', message: err.message };
+        }
+        saveRun(paths, run);
+
+        return {
+          answered: query.id,
+          by: query.answeredBy,
+          message: `Answer recorded for "${query.id}" via chat, answered by ${by}.`
         };
       })
   },

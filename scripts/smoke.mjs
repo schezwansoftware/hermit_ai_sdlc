@@ -14,7 +14,8 @@ import {
   layout, loadRegistry, DEFAULT_PIPELINE, createRun, loadRun, requireActiveRun,
   nextTask, submitArtifact, requestHandoff, runStatus, decideGate, openGates, getStage, saveRun,
   writeOnboardingArtifact, onboardingStatus, readArtifact, ONBOARDING_ARTIFACTS,
-  SECURITY_ARTIFACTS
+  SECURITY_ARTIFACTS, askGuidance, answerGuidance, openGuidanceQueries, getGuidanceQuery,
+  queryTelemetry
 } from '@hermit/core';
 
 const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
@@ -124,6 +125,62 @@ for (const id of ONBOARDING_ARTIFACTS) {
 const otherRun = createRun(paths, { title: 'unrelated', intent: 'something else' });
 assert.ok(readArtifact(paths, otherRun.id, 'codebase-map'), 'a second run reads the same onboarding');
 console.log('✓ every run reads the shared onboarding, including runs that predate it');
+
+// Guidance queries: ask, answer, and the trust boundary in between. Not tied
+// to a gate — an agent can ask mid-stage and keep working while it waits.
+{
+  let gr = loadRun(paths, run.id);
+  assert.throws(
+    () => askGuidance(paths, gr, { agentId: 'analyst', stageId: 'requirements', question: 'what should I do here?' }),
+    /open-ended/,
+    'a vague question must be refused before it ever reaches the ledger'
+  );
+  assert.throws(
+    () => askGuidance(paths, gr, { agentId: 'analyst', stageId: 'requirements', question: 'too short' }),
+    /at least 10 characters/,
+    'a too-short question must be refused'
+  );
+
+  const q = askGuidance(paths, gr, {
+    agentId: 'analyst',
+    stageId: 'requirements',
+    question: 'Should cart expiry be 30 minutes or match the session TTL exactly?',
+    context: 'PCI constraint mentions "session lifetime" but not a specific number.',
+    priority: 'normal'
+  });
+  saveRun(paths, gr);
+  assert.equal(q.respondedAt, null, 'a fresh query is unanswered');
+  assert.equal(openGuidanceQueries(loadRun(paths, run.id)).length, 1, 'the query must be visible as open');
+
+  assert.throws(
+    () => answerGuidance(paths, loadRun(paths, run.id), q.id, { answeredBy: 'agent', answer: 'yes', source: 'mcp' }),
+    /only be answered by a human/,
+    'an answer from outside cli/chat must be refused, same trust boundary as a gate decision'
+  );
+
+  gr = loadRun(paths, run.id);
+  const answered = answerGuidance(paths, gr, q.id, {
+    answeredBy: 'harshit',
+    answer: 'Match the session TTL exactly — a fixed 30 minutes would outlive an already-expired session.',
+    source: 'chat'
+  });
+  saveRun(paths, gr);
+  assert.ok(answered.respondedAt, 'an answered query records when');
+  assert.equal(openGuidanceQueries(loadRun(paths, run.id)).length, 0, 'an answered query is no longer open');
+  assert.equal(getGuidanceQuery(loadRun(paths, run.id), q.id).answer.includes('session TTL'), true, 'the answer content must persist');
+
+  assert.throws(
+    () => answerGuidance(paths, loadRun(paths, run.id), q.id, { answeredBy: 'harshit', answer: 'again', source: 'cli' }),
+    /already answered/,
+    'a query cannot be answered twice'
+  );
+
+  const tel = queryTelemetry(loadRun(paths, run.id));
+  assert.equal(tel.queriesAsked, 1);
+  assert.equal(tel.queriesResolved, 1);
+  assert.equal(tel.resolutionRate, 100);
+  console.log('✓ guidance query: asked, validated, answered under the same trust boundary as a gate');
+}
 
 // Writing an artifact the stage does not own must be rejected.
 let r = loadRun(paths, run.id);
