@@ -1,4 +1,4 @@
-import { DEFAULT_PIPELINE, getStage, stageIndex } from './pipeline.js';
+import { DEFAULT_PIPELINE, getStage, stageIndex, reviewedStagesOf, reviewingStagesOf } from './pipeline.js';
 import { STAGE_STATUS, journal, saveRun } from './state.js';
 import { GATE_STATUS, findOpenGate, openGate } from './gates.js';
 import { evaluateAll } from './criteria.js';
@@ -23,6 +23,25 @@ export function criteriaContext(run, pipeline = DEFAULT_PIPELINE) {
       (s) => s.skipWhen === 'no-ui' && run.stages?.[s.id]?.status !== STAGE_STATUS.SKIPPED
     )
   };
+}
+
+/**
+ * The most recent commented gate decision a re-entered stage should see.
+ *
+ * Usually that is a gate the stage's own completion opened (a completion
+ * gate re-entering itself). But a stage reopened *because a downstream
+ * quality gate* (review/qa/security) requested changes on its output never
+ * has a gate on its own stage id to find — the comment lives on the
+ * reviewer's gate instead. Falling back to the most recent commented gate
+ * among that stage's reviewers is what actually surfaces the reviewer's
+ * comment to the agent redoing the work.
+ */
+export function latestGateFeedback(pipeline, run, stageId) {
+  const own = [...run.gates].reverse().find((g) => g.stageId === stageId && g.comment);
+  if (own) return own;
+  const reviewers = reviewingStagesOf(pipeline, stageId);
+  if (!reviewers.length) return null;
+  return [...run.gates].reverse().find((g) => reviewers.includes(g.stageId) && g.comment);
 }
 
 /**
@@ -91,9 +110,30 @@ export function reconcile(paths, run, pipeline = DEFAULT_PIPELINE) {
       st.completedAt = gate.decidedAt;
       journal(paths, run.id, { event: 'stage.completed', stage: gate.stageId, via: 'gate', gateId: gate.id });
     } else if (gate.status === GATE_STATUS.CHANGES_REQUESTED) {
-      st.status = STAGE_STATUS.CHANGES_REQUESTED;
-      st.completedAt = null;
-      journal(paths, run.id, { event: 'stage.reopened', stage: gate.stageId, gateId: gate.id });
+      // A quality gate (review/qa/security) declares `reviews: [...]` — its
+      // decision is about those stages' output, not its own. Route the
+      // producing stage(s) back for a fix instead of re-running the
+      // gatekeeper, and let the gatekeeper re-run naturally once they pass
+      // again, so it actually re-reviews the fix rather than being skipped.
+      const reviewed = reviewedStagesOf(pipeline, gate.stageId).filter(
+        (id) => run.stages[id] && run.stages[id].status !== STAGE_STATUS.SKIPPED
+      );
+      if (reviewed.length) {
+        for (const producerId of reviewed) {
+          const producer = run.stages[producerId];
+          producer.status = STAGE_STATUS.CHANGES_REQUESTED;
+          producer.completedAt = null;
+          journal(paths, run.id, { event: 'stage.reopened', stage: producerId, gateId: gate.id, via: gate.stageId });
+        }
+        st.status = STAGE_STATUS.PENDING;
+        st.completedAt = null;
+        st.startedAt = null;
+        journal(paths, run.id, { event: 'quality_gate.returned_upstream', stage: gate.stageId, gateId: gate.id, returnedTo: reviewed });
+      } else {
+        st.status = STAGE_STATUS.CHANGES_REQUESTED;
+        st.completedAt = null;
+        journal(paths, run.id, { event: 'stage.reopened', stage: gate.stageId, gateId: gate.id });
+      }
     } else if (gate.status === GATE_STATUS.REJECTED) {
       st.status = STAGE_STATUS.CHANGES_REQUESTED;
       run.status = 'blocked';
@@ -169,7 +209,7 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
 
   const bundle = buildContextBundle({ paths, run, stage, agent, registry, budget });
   const contract = outputContract(stage, criteriaContext(run, pipeline));
-  const priorGate = [...run.gates].reverse().find((g) => g.stageId === stage.id && g.comment);
+  const priorGate = latestGateFeedback(pipeline, run, stage.id);
 
   return {
     state: 'task',
