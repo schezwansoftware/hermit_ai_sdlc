@@ -101,7 +101,8 @@ export function createRun(paths, {
     currentStage: firstActionable(pipeline, stages),
     stages,
     artifacts: {},
-    gates: []
+    gates: [],
+    guidanceQueries: []
   };
   ensureDir(paths.runDir(id));
   writeJson(paths.runFile(id), run);
