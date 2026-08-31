@@ -211,6 +211,25 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
   const contract = outputContract(stage, criteriaContext(run, pipeline));
   const priorGate = latestGateFeedback(pipeline, run, stage.id);
 
+  // What the agent was actually handed for this attempt, for post-run
+  // debugging: this is "where did it find each piece of context" — the
+  // journal otherwise only records what an agent *submitted*, never what it
+  // started from. Ids and sizes only, never content — the journal is not
+  // another artifact store.
+  journal(paths, run.id, {
+    event: 'context.bundled',
+    stage: stage.id,
+    agent: agent.id,
+    attempt: st.attempts,
+    artifacts: bundle.artifacts.map((a) => ({ id: a.id, chars: a.content?.length ?? 0 })),
+    priorOutputs: bundle.priorOutputs.map((a) => ({ id: a.id, chars: a.content?.length ?? 0 })),
+    missingInputs: bundle.missingInputs,
+    knowledge: bundle.knowledge.map((k) => k.id),
+    skills: bundle.skills.map((s) => s.id),
+    reviewerFeedback: priorGate ? { fromStage: priorGate.stageId, decision: priorGate.decision } : null,
+    budget: bundle.budget
+  });
+
   return {
     state: 'task',
     runId: run.id,
@@ -257,7 +276,7 @@ export function submitArtifact({ paths, run, registry, pipeline = DEFAULT_PIPELI
  * Agent asks to move on. Exit criteria are evaluated first; a HITL stage then
  * opens a gate instead of advancing.
  */
-export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELINE, agentId, summary = null }) {
+export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELINE, agentId, summary = null, traceFile = null }) {
   reconcile(paths, run, pipeline);
   const stage = getStage(pipeline, run.currentStage);
   if (!stage) return { state: 'complete', message: `Run ${run.id} is already complete.` };
@@ -276,8 +295,22 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
     };
   }
 
-  if (summary) {
-    journal(paths, run.id, { event: 'stage.summary', stage: stage.id, agent: agentId, summary });
+  // `traceFile` is a pointer, not a capture: the name of the session
+  // transcript the agent believes it is running in, so a later, separately
+  // authorized analysis pass can load that file itself and see the full
+  // reasoning — Hermit never reads it. This is deliberate: an earlier
+  // attempt at reading session transcripts inline, from inside this engine,
+  // was correctly blocked by this environment's own permission classifier
+  // for reading another application's private data from outside its own
+  // session boundary. Recording where to look, instead of looking, keeps
+  // that read a deliberate, separately-approved step rather than something
+  // that happens automatically as a side effect of a stage completing.
+  // Recorded only once exit criteria pass — that is the moment a stage is
+  // genuinely done or paused for a human. A rejected handoff means the
+  // agent tries again in the same attempt; its next call is where the
+  // pointer belongs.
+  if (summary || traceFile) {
+    journal(paths, run.id, { event: 'stage.summary', stage: stage.id, agent: agentId, summary, traceFile });
   }
 
   if (stageNeedsGate(stage, { paths, run })) {

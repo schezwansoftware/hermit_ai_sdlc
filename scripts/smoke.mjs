@@ -15,7 +15,7 @@ import {
   nextTask, submitArtifact, requestHandoff, runStatus, decideGate, openGates, getStage, saveRun,
   writeOnboardingArtifact, onboardingStatus, readArtifact, ONBOARDING_ARTIFACTS,
   SECURITY_ARTIFACTS, reconcile, askGuidance, answerGuidance, openGuidanceQueries, getGuidanceQuery,
-  queryTelemetry
+  queryTelemetry, runTrace, lastAttemptTrace
 } from '@hermit/core';
 
 const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
@@ -353,7 +353,11 @@ for (let guard = 0; guard < 40; guard++) {
     if (!BODIES[out]) throw new Error(`smoke test has no body for artifact "${out}"`);
     submitArtifact({ paths, run: cur, registry: reg, artifactId: out, content: BODIES[out], agentId: stage.agent });
   }
-  const h = requestHandoff({ paths, run: loadRun(paths, run.id), registry: reg, agentId: stage.agent, summary: `did ${stage.id}` });
+  const h = requestHandoff({
+    paths, run: loadRun(paths, run.id), registry: reg, agentId: stage.agent,
+    summary: `did ${stage.id}`,
+    traceFile: `${run.id}-${stage.id}-session.jsonl`
+  });
   assert.ok(['advanced', 'awaiting_gate', 'complete'].includes(h.state), `handoff refused at ${stage.id}: ${h.message}`);
   stagesDone++;
 }
@@ -364,5 +368,43 @@ assert.equal(gatesHit, 9, `expected 9 gate encounters (7 gates + 1 architecture 
 
 console.log(`✓ ${stagesDone} stage completions, ${gatesHit} gate encounters`);
 console.log(`✓ run completed: ${final.artifacts.length} artifacts`);
+
+// The trace assembled from the journal must actually reflect what this run
+// did: architecture was sent back once (2 attempts, second carrying the
+// reviewer's comment as reasoning), and its first attempt's context bundle
+// must show the real upstream inputs it started from.
+{
+  const trace = runTrace(paths, loadRun(paths, run.id));
+  const arch = trace.stages.find((s) => s.stageId === 'architecture');
+  assert.ok(arch, 'architecture must appear in the trace — it ran');
+  assert.equal(arch.attempts.length, 2, 'architecture was sent back once, so the trace must show 2 attempts');
+  assert.ok(arch.attempts[0].context, 'the first attempt must have a recorded context bundle');
+  assert.ok(
+    arch.attempts[0].context.artifacts.some((a) => a.id === 'requirements-spec'),
+    'the traced context must name the real upstream artifacts the stage started from'
+  );
+  // The changes_requested decision is about attempt 1's work — journaled
+  // while attempt 1 was still the only attempt on record, before attempt 2
+  // ever starts — so it belongs to attempt 1's trace, not attempt 2's.
+  assert.ok(
+    arch.attempts[0].decisions.some((d) => d.kind === 'gate' && d.decision === 'changes_requested' && d.reason?.includes('rollback')),
+    "the attempt a gate decided on must carry the actual reasoning, not just that a decision happened"
+  );
+  assert.ok(arch.attempts[1].completedAt, 'a completed attempt must record when');
+  // Every successful handoff in this run passed `traceFile` — a pointer to
+  // where the agent's full reasoning lives, never its content. Hermit only
+  // ever stores the name.
+  assert.ok(
+    arch.attempts[1].traceFile?.includes('architecture'),
+    'the traceFile pointer must be recorded on the attempt that actually completed'
+  );
+  assert.equal(arch.attempts[1].summary, 'did architecture', 'summary and traceFile are recorded independently');
+
+  const last = lastAttemptTrace(paths, loadRun(paths, run.id), 'architecture');
+  assert.equal(last.attempt, arch.attempts[1].attempt, 'lastAttemptTrace must return the same attempt as the trace\'s last one');
+
+  console.log('✓ agent thinking trace: context, decision reasoning and a pointer to the session transcript recorded per stage attempt');
+}
+
 console.log('\nALL SMOKE CHECKS PASSED');
 fs.rmSync(root, { recursive: true, force: true });

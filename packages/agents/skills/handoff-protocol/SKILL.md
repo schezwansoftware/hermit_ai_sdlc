@@ -34,6 +34,8 @@ Three possible answers:
 | `awaiting_gate` | Criteria passed; a human must approve | **Stop.** Report the gate id and the CLI command |
 | `advanced` | Criteria passed; run moved on | You are done. Do not start the next stage |
 
+**Always pass `traceFile` on the call that gets you `awaiting_gate` or `advanced`, if you know your own session's transcript filename.** Hermit never reads it — it only records the name, so a later analysis pass can load the full reasoning behind this stage deliberately, rather than Hermit capturing it automatically as a side effect. If you genuinely do not know your session file, omit it; do not guess.
+
 ## Rules
 
 - Exit criteria are mechanical, not a judgement of quality. Passing them means your output is structurally complete, nothing more.

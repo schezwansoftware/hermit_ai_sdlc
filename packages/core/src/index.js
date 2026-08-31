@@ -16,3 +16,4 @@ export * from './projects.js';
 export * from './onboarding.js';
 export * from './security.js';
 export * from './directives.js';
+export * from './trace.js';
