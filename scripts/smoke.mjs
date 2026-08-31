@@ -14,7 +14,7 @@ import {
   layout, loadRegistry, DEFAULT_PIPELINE, createRun, loadRun, requireActiveRun,
   nextTask, submitArtifact, requestHandoff, runStatus, decideGate, openGates, getStage, saveRun,
   writeOnboardingArtifact, onboardingStatus, readArtifact, ONBOARDING_ARTIFACTS,
-  SECURITY_ARTIFACTS
+  SECURITY_ARTIFACTS, reconcile
 } from '@hermit/core';
 
 const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
@@ -37,10 +37,14 @@ assert.equal(DEFAULT_PIPELINE.stages.length, 15, 'expected 15 stages');
 // upstream — or outside the pipeline entirely, by onboarding or by the
 // repository security baseline.
 const produced = new Set([...ONBOARDING_ARTIFACTS, ...SECURITY_ARTIFACTS]);
+const stageIds = new Set(DEFAULT_PIPELINE.stages.map((s) => s.id));
 for (const s of DEFAULT_PIPELINE.stages) {
   const a = reg.agentsById[s.agent];
   assert.ok(a, `stage ${s.id} references missing agent ${s.agent}`);
   assert.ok(a.stages.includes(s.id), `agent ${s.agent} does not claim stage ${s.id}`);
+  for (const reviewed of s.reviews ?? []) {
+    assert.ok(stageIds.has(reviewed), `stage ${s.id} declares reviews:[${reviewed}] but no such stage exists`);
+  }
   for (const inp of s.inputs ?? []) {
     assert.ok(produced.has(inp), `stage ${s.id} consumes "${inp}" before any stage produces it`);
     assert.ok(
@@ -162,7 +166,8 @@ const BODIES = {
   'pull-request': '# Pull Request\n\n**URL**: https://github.com/acme/shop/pull/918\n**Provider**: github\n**Branch**: feat/proj-412 → main\n\n## Body Submitted\nWhat/Why/How.\n\n## Linked\nPROJ-412\n\n## Reviewers Requested\npayments\n\n## Checks\npending\n'
 };
 
-let gatesHit = 0, stagesDone = 0, changesRequestedTested = false, chatDecisionTested = false;
+let gatesHit = 0, stagesDone = 0, changesRequestedTested = false, chatDecisionTested = false,
+  reviewChangesRequestedTested = false;
 
 for (let guard = 0; guard < 40; guard++) {
   let cur = loadRun(paths, run.id);
@@ -237,6 +242,36 @@ for (let guard = 0; guard < 40; guard++) {
       console.log(`✓ re-entry returned the agent's own ${back.bundle.priorOutputs.length} prior artifacts, inputs intact and within budget`);
       continue;
     }
+    // Exercise changes_requested on a *quality gate* (review), not a stage's
+    // own completion gate. This must route back to whichever implementation
+    // stage(s) actually ran — not re-run the reviewer — and the reviewer's
+    // comment must reach that stage as feedback, since it never opens a gate
+    // on its own stage id to carry the comment.
+    if (g.stageId === 'review' && !reviewChangesRequestedTested) {
+      reviewChangesRequestedTested = true;
+      decideGate(paths, cur, g.id, 'changes_requested', { decidedBy: 'harshit', comment: 'Add rate limiting to the checkout endpoint.', source: 'cli' });
+      saveRun(paths, cur);
+
+      // Gate decisions are applied lazily by reconcile() — apply it directly
+      // first so we can see what it actually did to every stage, before
+      // nextTask() below moves the resumed stage on to in_progress.
+      const reopened = loadRun(paths, run.id);
+      reconcile(paths, reopened, DEFAULT_PIPELINE);
+      assert.equal(reopened.stages.review.status, 'pending', 'review must return to pending, not stay reopened itself');
+      assert.equal(reopened.stages.implementation_ui.status, 'changes_requested', 'the producing stage must be sent back');
+      assert.equal(reopened.stages.implementation_backend.status, 'changes_requested', 'every producing stage that ran must be sent back');
+
+      const back = nextTask({ paths, run: loadRun(paths, run.id), registry: reg });
+      assert.equal(back.state, 'task');
+      assert.equal(back.stage.id, 'implementation_ui', 'the run must resume at the producing stage, not the reviewer');
+      assert.equal(back.attempt, 2, 'a stage sent back by a quality gate is on attempt 2');
+      assert.ok(
+        back.rendered.includes('Add rate limiting to the checkout endpoint.'),
+        "the reviewer's comment must reach the re-entered stage even though it has no gate of its own"
+      );
+      console.log('✓ review changes_requested routed to implementation, not back to the reviewer');
+      continue;
+    }
     // Exercise a real 'chat' decision once, on the review gate — proving the
     // second door actually advances a run, not just that it fails safely.
     if (g.stageId === 'review' && !chatDecisionTested) {
@@ -268,7 +303,7 @@ for (let guard = 0; guard < 40; guard++) {
 
 const final = runStatus({ paths, run: loadRun(paths, run.id) });
 assert.equal(final.status, 'completed', `run did not complete: ${JSON.stringify(final.stages.filter(s=>s.status!=='done'))}`);
-assert.equal(gatesHit, 8, `expected 8 gate encounters (7 gates + 1 re-review), got ${gatesHit}`);
+assert.equal(gatesHit, 9, `expected 9 gate encounters (7 gates + 1 architecture re-review + 1 review re-review), got ${gatesHit}`);
 
 console.log(`✓ ${stagesDone} stage completions, ${gatesHit} gate encounters`);
 console.log(`✓ run completed: ${final.artifacts.length} artifacts`);

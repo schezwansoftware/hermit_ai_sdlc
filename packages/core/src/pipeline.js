@@ -200,6 +200,9 @@ export const DEFAULT_PIPELINE = {
       gateWhen: 'major-upgrades',
       optional: true,
       optIn: true,
+      // A quality gate over implementation's output, not a stage producing its
+      // own artifact from scratch. See `reviews` doc on the `review` stage below.
+      reviews: ['implementation_ui', 'implementation_backend'],
       inputs: ['change-set', 'change-set-ui', 'architecture-spec', 'dependency-map', 'security-baseline', 'project-context'],
       outputs: ['cve-report'],
       exitCriteria: [
@@ -219,6 +222,12 @@ export const DEFAULT_PIPELINE = {
       agent: 'reviewer',
       gate: 'hitl',
       skippable: false,
+      // Declares that this stage's gate decision is about someone else's work.
+      // `changes_requested` here means the *listed* stages' output is wrong, not
+      // that the reviewer's own verdict needs redoing — engine.js routes the
+      // stage back to whichever of these actually ran, then lets this stage
+      // re-run once they pass again, rather than reopening the gatekeeper.
+      reviews: ['implementation_ui', 'implementation_backend'],
       inputs: ['change-set', 'change-set-ui', 'architecture-spec', 'acceptance-criteria', 'work-plan'],
       outputs: ['review-report'],
       exitCriteria: [
@@ -231,6 +240,7 @@ export const DEFAULT_PIPELINE = {
       title: 'QA and verification',
       agent: 'qa',
       gate: 'auto',
+      reviews: ['implementation_ui', 'implementation_backend'],
       inputs: ['change-set', 'change-set-ui', 'acceptance-criteria', 'review-report'],
       outputs: ['test-plan', 'test-report'],
       exitCriteria: [
@@ -316,4 +326,25 @@ export function getStage(pipeline, stageId) {
 
 export function stageIndex(pipeline, stageId) {
   return pipeline.stages.findIndex((s) => s.id === stageId);
+}
+
+/**
+ * Stage ids whose output `stageId` is a quality gate over, if any.
+ *
+ * A stage declares `reviews: [...]` when its gate decision is really about
+ * someone else's artifact (review/qa/security inspecting implementation's
+ * change-set) rather than its own. Empty for every other stage — those own
+ * their gate outright, so `changes_requested` re-enters them directly.
+ */
+export function reviewedStagesOf(pipeline, stageId) {
+  return getStage(pipeline, stageId)?.reviews ?? [];
+}
+
+/**
+ * Stage ids that review `stageId`'s output as a downstream quality gate —
+ * the inverse of `reviewedStagesOf`. Used to find a reviewer's feedback
+ * comment when the *producing* stage (not the reviewer) is re-entered.
+ */
+export function reviewingStagesOf(pipeline, stageId) {
+  return pipeline.stages.filter((s) => (s.reviews ?? []).includes(stageId)).map((s) => s.id);
 }
