@@ -23,7 +23,7 @@ export function runTrace(paths, run, pipeline = DEFAULT_PIPELINE) {
     if (!st) return null;
     let a = st.attempts.find((x) => x.attempt === attempt);
     if (!a) {
-      a = { attempt, startedAt: null, context: null, submissions: [], rejections: [], decisions: [], summary: null, thinking: null, completedAt: null };
+      a = { attempt, startedAt: null, context: null, submissions: [], rejections: [], decisions: [], summary: null, traceFile: null, completedAt: null };
       st.attempts.push(a);
     }
     return a;
@@ -59,15 +59,16 @@ export function runTrace(paths, run, pipeline = DEFAULT_PIPELINE) {
         break;
       }
       case 'stage.summary': {
-        // The model's own account of its reasoning, written deliberately on
-        // the handoff call that got criteria to pass — the only record of
-        // "why" Hermit can ever have, since it cannot see inside a model's
-        // actual thinking.
+        // `traceFile` is a pointer the agent supplied on the handoff call
+        // that got criteria to pass — the filename of its own session
+        // transcript, where its full reasoning actually lives. Hermit never
+        // opens it; this is where to look, recorded so a later, separately
+        // authorized analysis pass can load it deliberately.
         const st = byStage.get(e.stage);
         const a = st?.attempts[st.attempts.length - 1];
         if (a) {
           a.summary = e.summary ?? a.summary;
-          a.thinking = e.thinking ?? a.thinking;
+          a.traceFile = e.traceFile ?? a.traceFile;
         }
         break;
       }

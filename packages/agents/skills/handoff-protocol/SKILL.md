@@ -34,7 +34,7 @@ Three possible answers:
 | `awaiting_gate` | Criteria passed; a human must approve | **Stop.** Report the gate id and the CLI command |
 | `advanced` | Criteria passed; run moved on | You are done. Do not start the next stage |
 
-**Always pass `thinking` on the call that gets you `awaiting_gate` or `advanced`.** Hermit has no other way to know why you made the choices you made — there is no channel from your reasoning to the journal except what you write down yourself. A short paragraph: what you chose, what you considered and rejected, and anything you are genuinely unsure of. This is what a human debugging this stage reads through `hermit_trace` when the result looks wrong later; an empty `thinking` field is a debugging session with nothing to go on.
+**Always pass `traceFile` on the call that gets you `awaiting_gate` or `advanced`, if you know your own session's transcript filename.** Hermit never reads it — it only records the name, so a later analysis pass can load the full reasoning behind this stage deliberately, rather than Hermit capturing it automatically as a side effect. If you genuinely do not know your session file, omit it; do not guess.
 
 ## Rules
 

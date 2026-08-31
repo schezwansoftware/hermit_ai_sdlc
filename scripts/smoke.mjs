@@ -356,7 +356,7 @@ for (let guard = 0; guard < 40; guard++) {
   const h = requestHandoff({
     paths, run: loadRun(paths, run.id), registry: reg, agentId: stage.agent,
     summary: `did ${stage.id}`,
-    thinking: `Chose the straightforward approach for ${stage.id}; nothing ambiguous enough to flag.`
+    traceFile: `${run.id}-${stage.id}-session.jsonl`
   });
   assert.ok(['advanced', 'awaiting_gate', 'complete'].includes(h.state), `handoff refused at ${stage.id}: ${h.message}`);
   stagesDone++;
@@ -391,18 +391,19 @@ console.log(`✓ run completed: ${final.artifacts.length} artifacts`);
     "the attempt a gate decided on must carry the actual reasoning, not just that a decision happened"
   );
   assert.ok(arch.attempts[1].completedAt, 'a completed attempt must record when');
-  // Every successful handoff in this run passed `thinking` — the model's own
-  // account of its reasoning, the only record of "why" Hermit can ever have.
+  // Every successful handoff in this run passed `traceFile` — a pointer to
+  // where the agent's full reasoning lives, never its content. Hermit only
+  // ever stores the name.
   assert.ok(
-    arch.attempts[1].thinking?.includes('architecture'),
-    "the model's own reasoning must be recorded on the attempt that actually completed"
+    arch.attempts[1].traceFile?.includes('architecture'),
+    'the traceFile pointer must be recorded on the attempt that actually completed'
   );
-  assert.equal(arch.attempts[1].summary, 'did architecture', 'summary and thinking are recorded independently');
+  assert.equal(arch.attempts[1].summary, 'did architecture', 'summary and traceFile are recorded independently');
 
   const last = lastAttemptTrace(paths, loadRun(paths, run.id), 'architecture');
   assert.equal(last.attempt, arch.attempts[1].attempt, 'lastAttemptTrace must return the same attempt as the trace\'s last one');
 
-  console.log('✓ agent thinking trace: context, decision reasoning and the model\'s own thinking recorded per stage attempt');
+  console.log('✓ agent thinking trace: context, decision reasoning and a pointer to the session transcript recorded per stage attempt');
 }
 
 console.log('\nALL SMOKE CHECKS PASSED');

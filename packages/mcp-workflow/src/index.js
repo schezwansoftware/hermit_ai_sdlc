@@ -174,19 +174,20 @@ const tools = [
     description:
       'Ask to advance. Exit criteria are checked first. Returns blocked (with the failing criteria), ' +
       'awaiting_gate (a human must approve), or advanced (the next agent takes over). Always pass ' +
-      '`thinking` when criteria pass — it is the only record of your reasoning Hermit can ever have; ' +
-      'a raw capture of a model\'s thinking is not something a tool call can carry.',
+      '`traceFile` when criteria pass — Hermit cannot see your reasoning, only where the full record ' +
+      'of it lives, for a later analysis pass to load deliberately.',
     input: {
       agent: z.string().describe('Your agent id'),
       summary: z.string().optional().describe('One-paragraph summary of what you did, recorded in the journal'),
-      thinking: z.string().optional().describe(
-        'Always include this. Why you made the choices you made — alternatives you considered and ' +
-        'rejected, and anything you are unsure of. This is what a human debugging this stage later, ' +
-        'through hermit_trace, actually has to go on.'
+      traceFile: z.string().optional().describe(
+        'Always include this if you know it: the filename of your current session transcript ' +
+        '(e.g. "06b24e1e-3035-4cd5-ae7f-61ef3c1aa160.jsonl"). Hermit never opens this itself — it only ' +
+        'records the name, so a later, separately authorized analysis pass can load the file and see ' +
+        'your full reasoning for this stage. Omit if you genuinely do not know your own session file.'
       )
     },
-    handler: ({ agent, summary, thinking }) =>
-      withRun((run, reg) => requestHandoff({ paths, run, registry: reg, agentId: agent, summary, thinking }))
+    handler: ({ agent, summary, traceFile }) =>
+      withRun((run, reg) => requestHandoff({ paths, run, registry: reg, agentId: agent, summary, traceFile }))
   },
   {
     name: 'hermit_get_artifact',
@@ -477,11 +478,12 @@ const tools = [
     description:
       'Post-run debugging: for each stage, every attempt it took, what context it was actually handed ' +
       '(artifact ids and sizes offered — not full content), what it submitted, why any handoff was ' +
-      'rejected, the reasoning behind every gate decision and guidance answer on it, and the model\'s ' +
-      'own `thinking` from the handoff that completed it — the one account of "why" Hermit can ever ' +
-      'have, since it cannot see inside a model\'s actual reasoning, only what the model chooses to ' +
-      'write down. Same journal hermit_journal exposes flat and chronological, grouped instead by stage ' +
-      'and attempt — the shape a "why did this stage go wrong" question actually needs.',
+      'rejected, the reasoning behind every gate decision and guidance answer on it, and the ' +
+      '`traceFile` the agent named on the handoff that completed it — a pointer to that attempt\'s ' +
+      'session transcript, not its content. This tool never opens that file; load it separately when ' +
+      'the full reasoning is actually needed. Same journal hermit_journal exposes flat and ' +
+      'chronological, grouped instead by stage and attempt — the shape a "why did this stage go wrong" ' +
+      'question actually needs.',
     readOnly: true,
     input: { runId: z.string().optional().describe('Defaults to the active run') },
     handler: ({ runId }) => {
