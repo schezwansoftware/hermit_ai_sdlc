@@ -24,6 +24,7 @@ export const SERVERS = {
       'hermit_get_agent',
       'hermit_gate_status',
       'hermit_journal',
+      'hermit_trace',
       'hermit_start_run',
       'hermit_onboarding_task',
       'hermit_submit_onboarding',

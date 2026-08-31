@@ -27,6 +27,7 @@ import {
   answerGuidance,
   openGuidanceQueries,
   getGuidanceQuery,
+  runTrace,
   onboardingStatus,
   writeOnboardingArtifact,
   readOnboardingArtifact,
@@ -461,6 +462,24 @@ const tools = [
       const id = runId ?? activeRunId(paths);
       if (!id) return { state: 'no_active_run' };
       return readJournal(paths, id).slice(-limit);
+    }
+  },
+  {
+    name: 'hermit_trace',
+    title: 'Agent thinking trace',
+    description:
+      'Post-run debugging: for each stage, every attempt it took, what context it was actually handed ' +
+      '(artifact ids and sizes offered — not full content), what it submitted, why any handoff was ' +
+      'rejected, and the reasoning behind every gate decision and guidance answer on it. Same journal ' +
+      'hermit_journal exposes flat and chronological, grouped instead by stage and attempt — the shape ' +
+      'a "why did this stage go wrong" question actually needs. Reflects what was offered to an agent, ' +
+      'not what it actually read from that offer — the pipeline cannot see inside a model\'s reasoning.',
+    readOnly: true,
+    input: { runId: z.string().optional().describe('Defaults to the active run') },
+    handler: ({ runId }) => {
+      const id = runId ?? activeRunId(paths);
+      if (!id) return { state: 'no_active_run' };
+      return runTrace(paths, loadRun(paths, id));
     }
   },
   {

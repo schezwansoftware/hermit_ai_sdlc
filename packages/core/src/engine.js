@@ -211,6 +211,25 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
   const contract = outputContract(stage, criteriaContext(run, pipeline));
   const priorGate = latestGateFeedback(pipeline, run, stage.id);
 
+  // What the agent was actually handed for this attempt, for post-run
+  // debugging: this is "where did it find each piece of context" — the
+  // journal otherwise only records what an agent *submitted*, never what it
+  // started from. Ids and sizes only, never content — the journal is not
+  // another artifact store.
+  journal(paths, run.id, {
+    event: 'context.bundled',
+    stage: stage.id,
+    agent: agent.id,
+    attempt: st.attempts,
+    artifacts: bundle.artifacts.map((a) => ({ id: a.id, chars: a.content?.length ?? 0 })),
+    priorOutputs: bundle.priorOutputs.map((a) => ({ id: a.id, chars: a.content?.length ?? 0 })),
+    missingInputs: bundle.missingInputs,
+    knowledge: bundle.knowledge.map((k) => k.id),
+    skills: bundle.skills.map((s) => s.id),
+    reviewerFeedback: priorGate ? { fromStage: priorGate.stageId, decision: priorGate.decision } : null,
+    budget: bundle.budget
+  });
+
   return {
     state: 'task',
     runId: run.id,

@@ -15,6 +15,7 @@ context:
       - hermit_decide_gate
       - hermit_answer_guidance
       - hermit_journal
+      - hermit_trace
       - hermit_start_run
       - hermit_list_agents
       - hermit_get_agent
