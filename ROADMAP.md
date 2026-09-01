@@ -174,6 +174,20 @@ Two jobs on two different clocks, which is why it exists in two places.
 - Work the approved plan does not contain goes under `## Gaps`, not into the tracker
 - Writes no files: no `writes.paths`, so it gets no edit or execute tools in either harness
 
+### 9. Auto-decide stages mid-run (HERMIT-17) — **shipped**
+
+Run scope (item 6) is read once from the intent and frozen. But a run learns things the sentence could not know: the architecture settles that there is no interface, and three UX stages plus a UI build are now dead weight carried to the end.
+
+**As built:**
+- `skipStages()` in `packages/core/src/engine.js` — stands optional, still-`pending` stages down after the run has started
+- **Narrows only, never widens.** A `skipped` stage stays skipped; a user who wants more coverage starts a new run
+- **No gate.** Scope was never a human approval (a fixed table decides it — item 6), so narrowing it is an intimation, not a decision to ratify. A `reason` is mandatory and the call hands back an `intimation` string the orchestrator must relay to the user
+- **Gated on a ratified upstream.** Refused until `requirements` or `architecture` is `done`
+- **The four locked stages are refused here too** — same as the parser and `createRun`. So is any stage that has already started
+- `hermit_skip_stages` on the workflow server, orchestrator-only (role agents get a denial, like `hermit_decide_gate`). No CLI door — a human who changes their mind starts a new run
+- Recorded as a `skip` directive with its reason, so `hermit status` shows it beside the stage exactly like a prompt-driven skip
+- Verified by `npm run check:scope`
+
 
 ---
 
