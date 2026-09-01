@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import {
   layout, loadRegistry, DEFAULT_PIPELINE, createRun, loadRun, saveRun, runStatus,
-  requestHandoff, writeArtifact, readArtifact, stageNeedsGate, majorUpgradeCount,
+  requestHandoff, skipStages, writeArtifact, readArtifact, stageNeedsGate, majorUpgradeCount,
   parseDirectives, resolveTargets, skippableStages, optInStages,
   writeSecurityArtifact, securityStatus, checkSecurityArtifact,
   SECURITY_ARTIFACTS, STAGE_STATUS
@@ -219,6 +219,62 @@ const refusedHandoff = requestHandoff({ paths, run: loadRun(paths, silent.id), r
 assert.equal(refusedHandoff.state, 'blocked', 'a report with no major-upgrade count must not hand off');
 assert.match(refusedHandoff.message, /major-count-stated/);
 console.log('  ✓ a report that omits the count is refused rather than assumed safe');
+
+// ----------------------------------------- mid-run scope narrowing (HERMIT-17)
+
+// Before requirements or architecture is done, the run is not ratified — no.
+const early = createRun(paths, { title: 'Early', intent: 'build a thing', registry: reg });
+const earlyTry = skipStages({ paths, run: early, stageIds: ['qa'], reason: 'not needed' });
+assert.equal(earlyTry.state, 'denied', 'a scope change before requirements/architecture is refused');
+assert.equal(early.stages.qa.status, STAGE_STATUS.PENDING);
+
+// A reason is mandatory — it is what the user gets told.
+const noReason = skipStages({ paths, run: early, stageIds: ['qa'], reason: '  ' });
+assert.equal(noReason.state, 'denied', 'a skip with no reason is refused');
+
+// With architecture done, optional pending stages can be stood down.
+const midRun = createRun(paths, { title: 'Mid', intent: 'add an internal batch job', registry: reg });
+midRun.stages.requirements.status = STAGE_STATUS.DONE;
+midRun.stages.architecture.status = STAGE_STATUS.DONE;
+saveRun(paths, midRun);
+
+const narrowed = skipStages({
+  paths, run: midRun,
+  stageIds: ['ux_lofi', 'ux_midfi', 'ux_hifi', 'implementation_ui', 'requirements', 'documentation'],
+  reason: 'architecture settled there is no interface'
+});
+assert.equal(narrowed.state, 'scope_narrowed');
+assert.deepEqual(narrowed.skipped.sort(), ['documentation', 'implementation_ui', 'ux_hifi', 'ux_lofi', 'ux_midfi'].sort());
+assert.ok(narrowed.refused.some((r) => r.id === 'requirements'), 'a locked stage is refused mid-run too');
+assert.ok(narrowed.intimation && /report this to the user/i.test(narrowed.intimation), 'the caller is handed an intimation to relay');
+for (const id of ['ux_lofi', 'ux_midfi', 'ux_hifi', 'implementation_ui', 'documentation']) {
+  assert.equal(loadRun(paths, midRun.id).stages[id].status, STAGE_STATUS.SKIPPED, `"${id}" stood down`);
+}
+assert.equal(loadRun(paths, midRun.id).stages.requirements.status, STAGE_STATUS.DONE, 'requirements untouched');
+
+// It shows up in status as a skip with the reason, exactly like a prompt directive.
+const midStatus = runStatus({ paths, run: loadRun(paths, midRun.id) });
+const uxRow = midStatus.stages.find((s) => s.id === 'ux_hifi');
+assert.equal(uxRow.status, 'skipped');
+assert.ok(
+  (midStatus.directives ?? []).some((d) => d.action === 'skip' && d.stages.includes('ux_hifi') && /no interface/.test(d.phrase)),
+  'the mid-run skip is recorded as a directive with its reason'
+);
+
+// A stage that already ran cannot be retroactively skipped.
+const started = loadRun(paths, midRun.id);
+started.stages.planning.status = STAGE_STATUS.DONE;
+saveRun(paths, started);
+const tooLate = skipStages({ paths, run: started, stageIds: ['planning'], reason: 'changed my mind' });
+assert.ok(tooLate.refused.some((r) => r.id === 'planning'), 'a completed stage is refused');
+assert.equal(tooLate.state, 'no_change');
+
+// Skipping an already-skipped stage is a quiet no-op, not an error.
+const again = skipStages({ paths, run: loadRun(paths, midRun.id), stageIds: ['ux_lofi'], reason: 'still no interface' });
+assert.deepEqual(again.alreadySkipped, ['ux_lofi']);
+assert.equal(again.skipped.length, 0);
+
+console.log('  ✓ the orchestrator can narrow scope after requirements/architecture, locked stages excepted');
 
 // ------------------------------------------------- the repository baseline
 

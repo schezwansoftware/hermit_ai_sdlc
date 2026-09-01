@@ -16,6 +16,7 @@ import {
   nextTask,
   submitArtifact,
   requestHandoff,
+  skipStages,
   runStatus,
   readArtifact,
   openGates,
@@ -317,6 +318,35 @@ const tools = [
           by: gate.decidedBy,
           message: `${gate.decision} recorded for "${gate.stageTitle}" via chat, decided by ${by}.`
         };
+      })
+  },
+  {
+    name: 'hermit_skip_stages',
+    title: 'Narrow run scope mid-run — orchestrator only',
+    description:
+      'Stand optional stages down after the run has started, once requirements or architecture is ' +
+      'complete and the run knows something the intent sentence could not. No gate: scope was never a ' +
+      'human approval, so this is an intimation, not a decision — but a `reason` is required and you ' +
+      'MUST relay the returned `intimation` to the user. Cannot touch requirements, architecture, ' +
+      'review or delivery (they carry human gates), and cannot touch a stage that has already started. ' +
+      'Reachable by the orchestrator only.',
+    input: {
+      stages: z.array(z.string()).describe('Stage ids to stand down, e.g. ["ux_lofi","ux_midfi","ux_hifi","implementation_ui"]'),
+      reason: z.string().describe('Why these stages are not needed — recorded and shown to the user as the intimation'),
+      decidedBy: z.string().optional().describe('The human name, if a person asked for this. Defaults to the git identity'),
+      agent: z.string().describe('Must be "orchestrator" — role agents cannot change run scope')
+    },
+    handler: ({ stages, reason, decidedBy, agent }) =>
+      withRun((run) => {
+        if (agent !== 'orchestrator') {
+          return {
+            state: 'denied',
+            message:
+              'Only the orchestrator narrows run scope. If you are a role agent, do the stage you were ' +
+              'given and raise the question with the orchestrator instead.'
+          };
+        }
+        return skipStages({ paths, run, stageIds: stages, reason, decidedBy: decidedBy ?? null });
       })
   },
   {
