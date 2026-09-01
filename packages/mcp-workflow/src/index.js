@@ -84,6 +84,10 @@ Normal agent loop:
   2. hermit_submit_artifact  once per declared output
   3. hermit_request_handoff  ask to advance
 
+Call hermit_next_task with no format argument. The default already returns the
+whole brief as one string; format: "json" JSON-encodes the same prose (roughly
+5-10% larger) for fields almost nothing downstream actually parses.
+
 Gates are human-only. A person can decide one from a terminal at any time
 ("hermit gate approve <id>"), or the orchestrator can call hermit_decide_gate
 from chat — but only in the same turn a human has explicitly said what to
@@ -117,10 +121,21 @@ const tools = [
     title: 'Next task',
     description:
       'Receive the brief for the current stage: your playbook, the scoped context bundle you are ' +
-      'entitled to, and the output contract. Returns awaiting_gate instead if a human decision is pending.',
+      'entitled to, and the output contract. Returns awaiting_gate instead if a human decision is pending. ' +
+      'Leave `format` unset — the default already returns everything below as one rendered brief. Do not ' +
+      'switch to `format: "json"` on the assumption that it is more complete or more parseable: it is the ' +
+      'same content, just JSON-escaped, which costs a modest amount of extra size (roughly 5-10% in ' +
+      'practice) for nothing you actually need in the common case. If your responses are still being ' +
+      'truncated by your host on the default markdown format, the fix is a smaller stage brief (a leaner ' +
+      'playbook, a tighter reviewer comment), not the format — switching formats alone will not fix a ' +
+      'response that is oversized because of what it contains. Only pass `json` if you are about to read ' +
+      'one specific field programmatically, never as a default habit.',
     input: {
       agent: z.string().optional().describe('Your agent id, to verify you own this stage'),
-      format: z.enum(['markdown', 'json']).optional().describe('markdown (default) returns the rendered brief')
+      format: z.enum(['markdown', 'json']).optional().describe(
+        'Leave unset. markdown (default) returns the rendered brief as one string — modestly smaller, ' +
+        'and all you need almost always. json exists only for a caller that must parse individual fields.'
+      )
     },
     handler: ({ agent, format = 'markdown' }) =>
       withRun((run, reg) => {
