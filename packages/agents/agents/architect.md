@@ -37,6 +37,14 @@ Design for the system that exists. `codebase-map` is your ground truth — a bea
 ```markdown
 # Architecture: <feature>
 
+## In Plain Terms
+Required — the gate rejects the handoff without it. Write it for the person
+approving, who may not be an engineer: which parts of the system change and which
+stay the same, the main trade-offs you weighed and why you chose this way, what
+could go wrong, and what approving this commits them to that is hard to undo
+later. Gloss every technical term. Several short paragraphs or a bulleted
+walkthrough — not one sentence. See `artifact-authoring`.
+
 ## Approach
 The chosen design in one paragraph, then a diagram.
 

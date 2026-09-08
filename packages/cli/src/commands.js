@@ -11,7 +11,8 @@ import {
   ONBOARDING_ARTIFACTS, ONBOARDING_STATUS,
   securityStatus, setSecurityStatus, SECURITY_ARTIFACTS, SECURITY_STATUS, MANIFEST_FILES,
   parseDirectives, resolveTargets,
-  nextTask, runStatus, decideGate, getGate, openGates, readArtifact, listArtifacts, resolveDecider
+  nextTask, runStatus, decideGate, getGate, openGates, readArtifact, listArtifacts, resolveDecider,
+  HERMIT_VERSION
 } from '@hermit/core';
 import { compileAll, installPacks, writeFiles, orphanedFiles, pruneOrphans } from './compile/index.js';
 import { HARNESSES, resolveHarnesses } from './compile/harnesses.js';
@@ -480,6 +481,11 @@ export function cmdStatus(opts) {
     log('');
     for (const g of s.openGates) {
       log(`  ${c.yellow('⏸ AWAITING YOUR DECISION')} — ${g.stageTitle}`);
+      if (g.plain) log(`     ${c.dim(`What approving means: ${g.plain}`)}`);
+      for (const b of g.plainBriefing ?? []) {
+        log(`     ${c.dim(`In plain terms — ${b.artifact}:`)}`);
+        for (const ln of String(b.text).split('\n')) log(`       ${c.dim(ln)}`);
+      }
       log(`     Review: ${(g.reviewArtifacts ?? []).map((a) => `.hermit/runs/${s.id}/artifacts/${a}.md`).join('\n             ')}`);
       log(`     ${c.cyan(`hermit gate approve ${g.id}`)}`);
       log(`     ${c.dim(`hermit gate changes ${g.id} -m "what needs to change"`)}`);
@@ -511,7 +517,8 @@ export function cmdNext(opts) {
   if (task.state === 'awaiting_gate') {
     log('');
     log(c.yellow('⏸ A human gate is open.'), 'No agent may proceed.');
-    log(`  ${c.cyan(`hermit gate approve ${task.gate.id}`)}`);
+    log('');
+    log(task.message);
     log('');
     return task;
   }
@@ -535,6 +542,11 @@ export function cmdGate(action, gateId, opts) {
     log('');
     for (const g of open) {
       log(`  ${c.yellow(g.id)}  ${g.stageTitle}`);
+      if (g.plain) log(`     ${c.dim(`What approving means: ${g.plain}`)}`);
+      for (const b of g.plainBriefing ?? []) {
+        log(`     ${c.dim(`In plain terms — ${b.artifact}:`)}`);
+        for (const ln of String(b.text).split('\n')) log(`       ${c.dim(ln)}`);
+      }
       log(`     opened ${g.openedAt}`);
       log(`     review: ${(g.reviewArtifacts ?? []).join(', ')}`);
       for (const cr of g.criteria ?? []) log(`       ${cr.ok ? c.green('✓') : c.red('✗')} ${cr.id}`);
@@ -683,6 +695,7 @@ export function cmdDoctor(opts) {
     log(`  ${c.red('✗')} .hermit/ not found. Run: npx hermit init`);
     return { ok: false };
   }
+  log(`  ${c.green('✓')} Hermit v${HERMIT_VERSION}`);
   log(`  ${c.green('✓')} workspace at ${p.root}`);
 
   const config = readJson(p.config, {});

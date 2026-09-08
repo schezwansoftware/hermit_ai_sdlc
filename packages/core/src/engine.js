@@ -2,7 +2,7 @@ import { DEFAULT_PIPELINE, getStage, stageIndex, reviewedStagesOf, reviewingStag
 import { STAGE_STATUS, journal, saveRun } from './state.js';
 import { GATE_STATUS, findOpenGate, openGate } from './gates.js';
 import { evaluateAll } from './criteria.js';
-import { writeArtifact, listArtifacts, readArtifact } from './artifacts.js';
+import { writeArtifact, listArtifacts, readArtifact, extractSection } from './artifacts.js';
 import { buildContextBundle, outputContract, renderBundle } from './context.js';
 import { resolveStageAgent } from './registry.js';
 
@@ -21,7 +21,10 @@ export function criteriaContext(run, pipeline = DEFAULT_PIPELINE) {
     backend: Boolean(run.tech?.backend),
     ui: pipeline.stages.some(
       (s) => s.skipWhen === 'no-ui' && run.stages?.[s.id]?.status !== STAGE_STATUS.SKIPPED
-    )
+    ),
+    // `tracker` on means planning becomes a human gate (see GATE_CONDITIONS), so
+    // the work plan then needs a plain-language summary the approver can read.
+    tracker: Boolean(run.stages?.tracker) && run.stages.tracker.status !== STAGE_STATUS.SKIPPED
   };
 }
 
@@ -144,6 +147,53 @@ function gateReason(stage, { paths, run }) {
 }
 
 /**
+ * The plain-language walkthrough of what a gated stage actually submitted
+ * (HERMIT-18).
+ *
+ * The producing agent writes a `## In Plain Terms` section into each gated
+ * artifact — a jargon-free account of what the document proposes and what it
+ * means in practice, not a one-line label. This lifts those sections out so
+ * the gate message, `hermit_gate_status`, and whatever the orchestrator
+ * relays to the user all rest on what was written for this run, in the
+ * producer's own words. Returns `[{ artifact, text }]`, longest-lived first.
+ */
+export function gatePlainBriefing(paths, run, stage) {
+  const out = [];
+  for (const id of stage.outputs ?? []) {
+    const content = readArtifact(paths, run.id, id);
+    if (!content) continue;
+    const text = extractSection(content, '## In Plain Terms');
+    if (text) out.push({ artifact: id, text });
+  }
+  return out;
+}
+
+/** Render the plain-language briefing as the block appended to a gate message. */
+function renderGateBriefing(stage, gate, briefing) {
+  const lines = [];
+  lines.push(`Exit criteria passed. "${stage.title}" now requires human approval.`);
+  if (gate.reason) lines.push(`Why this stage is gated: ${gate.reason}.`);
+  if (gate.plain) lines.push('', `What approving means: ${gate.plain}`);
+  if (briefing.length) {
+    lines.push('', 'In plain terms — what was submitted for your approval:');
+    for (const b of briefing) {
+      lines.push('', `### ${b.artifact}`, '', b.text);
+    }
+  }
+  lines.push(
+    '',
+    `Review artifacts in full: ${(stage.outputs ?? []).join(', ')}`,
+    `A person must run:  hermit gate approve ${gate.id}   (or: hermit gate changes ${gate.id} -m "...")`,
+    'Do not start the next stage and do not approve this yourself.',
+    '',
+    'When you report this gate to the user, walk them through the plain-terms summary above in ' +
+      'your own words — expand it, do not shorten it — and translate any remaining jargon from the ' +
+      'artifacts. The person approving may not be an engineer.'
+  );
+  return lines.join('\n');
+}
+
+/**
  * Fold any decided gates into stage state. Called before every read so the run
  * converges whether the decision came from the CLI, a git pull, or another
  * machine sharing the run directory.
@@ -217,12 +267,15 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
 
   const openGateNow = findOpenGate(run);
   if (openGateNow) {
+    const gStage = getStage(pipeline, openGateNow.stageId);
+    const briefing = openGateNow.plainBriefing ?? (gStage ? gatePlainBriefing(paths, run, gStage) : []);
     return {
       state: 'awaiting_gate',
       gate: openGateNow,
-      message:
-        `Stage "${openGateNow.stageTitle}" is waiting for human approval (gate ${openGateNow.id}). ` +
-        `No agent may proceed until a person runs: hermit gate approve ${openGateNow.id}`
+      message: gStage
+        ? renderGateBriefing(gStage, openGateNow, briefing)
+        : `Stage "${openGateNow.stageTitle}" is waiting for human approval (gate ${openGateNow.id}). ` +
+          `Run: hermit gate approve ${openGateNow.id}`
     };
   }
 
@@ -345,7 +398,9 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
       criteria: check.results,
       message:
         `Handoff refused — ${check.failed.length} exit criterion/criteria not met for "${stage.title}":\n` +
-        check.results.filter((r) => !r.ok).map((r) => `  - ${r.id}: ${r.detail}`).join('\n')
+        check.results.filter((r) => !r.ok).map((r) => `  - ${r.id}: ${r.detail}`).join('\n') +
+        `\n\nIn plain terms: some required parts of this stage's output are missing or not in the ` +
+        `expected shape. Fix the items above and request the handoff again.`
     };
   }
 
@@ -372,17 +427,14 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
     const gate = openGate(paths, run, stage, check.results);
     const reason = gateReason(stage, { paths, run });
     if (reason) gate.reason = reason;
+    const briefing = gatePlainBriefing(paths, run, stage);
+    gate.plainBriefing = briefing;
     saveRun(paths, run);
     return {
       state: 'awaiting_gate',
       accepted: true,
       gate,
-      message:
-        `Exit criteria passed. "${stage.title}" now requires human approval.\n` +
-        (reason ? `Why: ${reason}.\n` : '') +
-        `Review artifacts: ${(stage.outputs ?? []).join(', ')}\n` +
-        `A person must run:  hermit gate approve ${gate.id}   (or: hermit gate changes ${gate.id} -m "...")\n` +
-        `Do not start the next stage and do not approve this yourself.`
+      message: renderGateBriefing(stage, gate, briefing)
     };
   }
 

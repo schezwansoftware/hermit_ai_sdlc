@@ -54,6 +54,12 @@ Work down this list. Stop-the-line issues come first because they invalidate eve
 **Verdict**: approve | changes_requested | reject
 Checked by the pipeline. One line, exactly one of those three values.
 
+## In Plain Terms
+Required — the gate rejects the handoff without it. For a non-engineer approving
+the review: is the code sound, what concerns did you find (in plain words, no
+`file:line`), and what does your verdict mean for whether this ships. A short
+paragraph. See `artifact-authoring`.
+
 ## Summary
 Two or three sentences: what was built, and your overall read.
 

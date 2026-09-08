@@ -184,6 +184,12 @@ The four counts are read mechanically. `**Major upgrades**` decides whether this
 stage stops for a human, so it must be a number and it must match the length of
 `## Needs Approval`.
 
+## In Plain Terms
+Required — the gate rejects the handoff without it. For a non-engineer: what the
+scan found, what you fixed automatically, and what needs a person to decide
+(especially any major upgrade and what it would break). Plain words, a short
+paragraph. See `artifact-authoring`.
+
 ## Method
 Tools run, with versions, and the advisory sources they consulted. Note anything
 you could not scan.

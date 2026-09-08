@@ -187,7 +187,7 @@ for (const [id, body] of Object.entries({
 // Requirements is human-gated; approve it to reach architecture.
 nextTask({ paths, run: loadRun(paths, run.id), registry });
 for (const [id, body] of [
-  ['requirements-spec', '# Requirements\n\n## Context\nNightly drift.\n\n## In Scope\n1. Reconcile.\n\n## Out of Scope\nRefunds.\n\n## Functional Requirements\nFR-1 Entries reconcile nightly.\n\n## Non-Functional Requirements\nCompletes in 2h.\n\n## Data\nEntries.\n\n## Dependencies\nNone.\n\n## Assumptions\nLedger is append-only.\n\n## Decisions Required\nNone outstanding.\n'],
+  ['requirements-spec', '# Requirements\n\n## In Plain Terms\nEach night, automatically match up ledger entries that currently drift out of sync, so nobody has to reconcile them by hand.\n\n## Context\nNightly drift.\n\n## In Scope\n1. Reconcile.\n\n## Out of Scope\nRefunds.\n\n## Functional Requirements\nFR-1 Entries reconcile nightly.\n\n## Non-Functional Requirements\nCompletes in 2h.\n\n## Data\nEntries.\n\n## Dependencies\nNone.\n\n## Assumptions\nLedger is append-only.\n\n## Decisions Required\nNone outstanding.\n'],
   ['acceptance-criteria', '# Acceptance Criteria\n\n## AC-1 — FR-1 — entries reconcile\n**Given** unmatched entries\n**When** the nightly job runs\n**Then** they are matched and the batch is idempotent\n\n**Verified by**: integration test\n']
 ]) {
   submitArtifact({ paths, run: loadRun(paths, run.id), registry, artifactId: id, content: body, agentId: 'analyst' });
@@ -209,7 +209,7 @@ assert.ok(
 );
 console.log('  ✓ architect brief demands ## Backend Design and omits ## Frontend Design');
 
-const ARCH_BASE = '# Architecture\n\n## Approach\nBatch reconcile.\n\n## Component Map\n| Component | Path |\n|---|---|\n| ledger | services/billing/ledger.go |\n\n## Interfaces\nPOST /reconcile\n\n## Data Design\nentries table.\n\n## Sequence\n1. read 2. match 3. write\n\n## Security\nmTLS.\n\n## Observability\nMetric ledger.reconciled\n\n## Performance\np95 2s.\n\n## Alternatives Considered\nStreaming — rejected, ordering.\n';
+const ARCH_BASE = '# Architecture\n\n## In Plain Terms\nA scheduled job matches ledger entries and writes the results, replacing the current manual reconciliation.\n\n## Approach\nBatch reconcile.\n\n## Component Map\n| Component | Path |\n|---|---|\n| ledger | services/billing/ledger.go |\n\n## Interfaces\nPOST /reconcile\n\n## Data Design\nentries table.\n\n## Sequence\n1. read 2. match 3. write\n\n## Security\nmTLS.\n\n## Observability\nMetric ledger.reconciled\n\n## Performance\np95 2s.\n\n## Alternatives Considered\nStreaming — rejected, ordering.\n';
 const REST = {
   adr: '# ADR-1: Batch reconcile\n\n## Status\nProposed\n\n## Context\nOrdering.\n\n## Decision\nBatch nightly.\n\n## Consequences\n### Positive\nSimple.\n### Negative\nUp to 24h stale.\n### Neutral\nNew job.\n\n## Alternatives\nStreaming — rejected: ordering guarantees.\n',
   'impact-analysis': '# Impact Analysis\n\n## Blast Radius\nbilling.\n\n## Breaking Changes\nNone.\n\n## Risks\n- Partial batch — medium — checkpoint.\n\n## Rollout\nFlag.\n\n## Rollback\nDisable the job.\n\n## Effort Signal\nM.\n\n## Cross-Project Impact\n| Project | In scope | Effect | Breaking | Migration |\n|---|---|---|---|---|\n| services-billing | yes | new job | no | none |\n'
