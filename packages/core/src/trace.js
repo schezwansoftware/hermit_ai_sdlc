@@ -81,7 +81,7 @@ export function runTrace(paths, run, pipeline = DEFAULT_PIPELINE) {
       case 'gate.decided': {
         const st = byStage.get(e.stage);
         const a = st?.attempts[st.attempts.length - 1];
-        if (a) a.decisions.push({ at: e.at, kind: 'gate', decision: e.decision, by: e.decidedBy, reason: e.comment, source: e.source });
+        if (a) a.decisions.push({ at: e.at, kind: 'gate', decision: e.decision, by: e.decidedBy, reason: e.comment, source: e.source, confidence: e.confidence ?? null, assumptions: e.assumptions ?? [] });
         break;
       }
       case 'guidance.answered': {

@@ -45,6 +45,56 @@ export function latestGateFeedback(pipeline, run, stageId) {
 }
 
 /**
+ * Approvals this stage is building on that the approver was not fully sure of
+ * (HERMIT-7).
+ *
+ * A gate approved with a confidence level below 95%, or carrying a list of
+ * assumptions, is a signal the downstream agent should see: the work it is
+ * about to extend rests on a decision someone flagged as provisional. Only
+ * gates on stages that ran *before* this one qualify — a later stage's gate
+ * cannot have informed work that precedes it — and only approvals, since
+ * `changes_requested`/`reject` never carry these fields.
+ */
+export function upstreamApprovalCaveats(pipeline, run, stageId) {
+  const here = stageIndex(pipeline, stageId);
+  if (here < 0) return [];
+  return run.gates
+    .filter((g) => {
+      if (g.status !== GATE_STATUS.APPROVED) return false;
+      if (stageIndex(pipeline, g.stageId) >= here) return false;
+      return (g.confidence != null && g.confidence < 95) || (g.assumptions?.length ?? 0) > 0;
+    })
+    .map((g) => ({
+      stage: g.stageId,
+      stageTitle: g.stageTitle,
+      confidence: g.confidence ?? null,
+      assumptions: g.assumptions ?? [],
+      by: g.decidedBy
+    }));
+}
+
+/** Render the upstream-caveats section appended to a downstream brief. */
+function renderCaveats(caveats) {
+  if (!caveats.length) return '';
+  const out = ['', '## Upstream approvals you are building on', ''];
+  out.push(
+    'These earlier stages were approved, but not with full confidence. Treat the parts of your ' +
+      'work that depend on them as the most likely to need revisiting, and call out explicitly where ' +
+      'you have relied on an assumption below.'
+  );
+  for (const c of caveats) {
+    out.push('');
+    out.push(
+      `- **${c.stageTitle}** — ${c.confidence != null ? `${c.confidence}% confidence` : 'assumptions flagged'}` +
+        ` (approved by ${c.by})`
+    );
+    for (const a of c.assumptions) out.push(`  - assumes: ${a}`);
+  }
+  out.push('');
+  return out.join('\n');
+}
+
+/**
  * How many dependency fixes exist only in a major version.
  *
  * Read from the report rather than inferred from an empty section: an agent that
@@ -210,6 +260,7 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
   const bundle = buildContextBundle({ paths, run, stage, agent, registry, budget });
   const contract = outputContract(stage, criteriaContext(run, pipeline));
   const priorGate = latestGateFeedback(pipeline, run, stage.id);
+  const caveats = upstreamApprovalCaveats(pipeline, run, stage.id);
 
   // What the agent was actually handed for this attempt, for post-run
   // debugging: this is "where did it find each piece of context" — the
@@ -227,6 +278,7 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
     knowledge: bundle.knowledge.map((k) => k.id),
     skills: bundle.skills.map((s) => s.id),
     reviewerFeedback: priorGate ? { fromStage: priorGate.stageId, decision: priorGate.decision } : null,
+    upstreamCaveats: caveats.map((c) => ({ stage: c.stage, confidence: c.confidence, assumptions: c.assumptions.length })),
     budget: bundle.budget
   });
 
@@ -237,13 +289,15 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
     agent: { id: agent.id, name: agent.name, role: agent.role },
     attempt: st.attempts,
     reviewerFeedback: priorGate ? { decision: priorGate.decision, comment: priorGate.comment, by: priorGate.decidedBy } : null,
+    upstreamCaveats: caveats,
     bundle,
     contract,
     playbook: agent.playbook,
     rendered: renderBundle(bundle, { playbook: agent.playbook, contract }) +
       (priorGate?.comment
         ? `\n\n## Reviewer feedback from the previous attempt\n\n> ${priorGate.comment}\n\n_Address this explicitly before requesting handoff again._\n`
-        : '')
+        : '') +
+      renderCaveats(caveats)
   };
 }
 

@@ -91,3 +91,7 @@ No agent decides a gate on its own judgement. A decision is either a person runn
 ## Re-entry
 
 When a gate returns `changes_requested`, your next `hermit_next_task` includes `reviewerFeedback` with the comment. Address it explicitly. Resubmitting unchanged content wastes a full cycle and will be rejected again.
+
+## Upstream approvals you are building on
+
+An approver may sign a gate off provisionally — at 60%, 80% or 95% confidence, with the assumptions the approval rests on. When an earlier stage was approved that way, your brief carries an `## Upstream approvals you are building on` section naming it and its assumptions. Treat the parts of your work that depend on those stages as the most likely to need revisiting, and say plainly in your output where you have leaned on one of the stated assumptions.

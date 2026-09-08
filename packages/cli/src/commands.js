@@ -559,13 +559,35 @@ export function cmdGate(action, gateId, opts) {
   const by = resolveDecider(p.root, opts.by ?? null);
   if (!by) throw new Error('Could not determine who is deciding. Pass --by "your name".');
 
-  decideGate(p, run, target, decision, { decidedBy: by, comment: opts.message ?? null, source: 'cli' });
+  // `--confidence 80` and `--assume "a; b; c"` qualify an approval (HERMIT-7):
+  // how sure you are, and what the approval rests on. Both optional; both
+  // refused on changes/reject by decideGate itself.
+  const confidence = opts.confidence != null && opts.confidence !== true ? Number(opts.confidence) : null;
+  const assumptions =
+    opts.assume != null && opts.assume !== true
+      ? String(opts.assume).split(';').map((s) => s.trim()).filter(Boolean)
+      : null;
+
+  decideGate(p, run, target, decision, {
+    decidedBy: by,
+    comment: opts.message ?? null,
+    source: 'cli',
+    confidence,
+    assumptions
+  });
   saveRun(p, run);
 
   const after = runStatus({ paths: p, run: loadRun(p, run.id) });
   log('');
   if (decision === 'approve') {
-    log(`  ${c.green('✓ Approved')} ${gate.stageTitle} ${c.dim(`by ${by}`)}`);
+    log(
+      `  ${c.green('✓ Approved')} ${gate.stageTitle} ${c.dim(`by ${by}`)}` +
+        (confidence != null ? c.dim(` (${confidence}% confidence)`) : '')
+    );
+    if (assumptions?.length) {
+      log(`  ${c.dim('Assumptions carried forward:')}`);
+      for (const a of assumptions) log(`  ${c.dim(`  - ${a}`)}`);
+    }
     if (after.currentStage) {
       const stage = after.stages.find((s) => s.id === after.currentStage);
       log(`  Next: ${c.cyan(stage.id)} — ${stage.title}, owned by ${c.bold(stage.agent)}`);

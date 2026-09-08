@@ -188,6 +188,19 @@ Run scope (item 6) is read once from the intent and frozen. But a run learns thi
 - Recorded as a `skip` directive with its reason, so `hermit status` shows it beside the stage exactly like a prompt-driven skip
 - Verified by `npm run check:scope`
 
+### 10. Provisional gate approvals (HERMIT-7) — **shipped**
+
+Approve/reject was binary: a 60%-confident "yes, probably" was recorded exactly like a 95%-confident "yes, certainly", and a shaky assumption then cascaded downstream with nothing marking it shaky.
+
+**As built:**
+- `decideGate()` in `packages/core/src/gates.js` takes an optional `confidence` (`60` / `80` / `95`) and an `assumptions` list on an **approval**
+- Both are **refused on `changes_requested` / `reject`** — those send the work back regardless of how sure the approver was, so the fields would describe nothing. Refused, not silently dropped
+- An approval with no confidence stated is unqualified, exactly as before — nothing about the existing flow changes
+- **Carried downstream.** `upstreamApprovalCaveats()` in `engine.js` collects approvals of earlier stages made below 95% or carrying assumptions, and every later stage's brief gets an `## Upstream approvals you are building on` section naming them and their assumptions, so the agent can be correspondingly more careful about the parts of its work that depend on them
+- Recorded on the gate, in the `gate.decided` journal event, and surfaced per attempt by `hermit_trace`
+- Both doors carry it: `hermit gate approve <id> --confidence 80 --assume "a; b"` on the CLI, and `confidence` / `assumptions` params on `hermit_decide_gate` for the orchestrator
+- Verified by `npm run test` (smoke)
+
 
 ---
 

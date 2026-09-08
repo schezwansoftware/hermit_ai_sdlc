@@ -257,7 +257,8 @@ const tools = [
           .filter((g) => g.status !== 'open')
           .map((g) => ({
             id: g.id, stage: g.stageId, decision: g.decision,
-            by: g.decidedBy, at: g.decidedAt, comment: g.comment, source: g.source ?? 'cli'
+            by: g.decidedBy, at: g.decidedAt, comment: g.comment, source: g.source ?? 'cli',
+            confidence: g.confidence ?? null, assumptions: g.assumptions ?? []
           }))
       }))
   },
@@ -268,17 +269,27 @@ const tools = [
       'Approve, request changes on, or reject an open gate, from chat instead of a terminal. This is ' +
       'not a shortcut for your own judgement: call it only in the same turn a human has explicitly told ' +
       'you what to decide and why. The host will ask them to confirm before it runs — that confirmation ' +
-      'is the human decision Hermit records, not anything you inferred. Reachable by the orchestrator ' +
-      'only; a role agent that finds an open gate reports it and stops instead.',
+      'is the human decision Hermit records, not anything you inferred. On an approval you may also ' +
+      'pass the confidence level (60/80/95) and the assumptions the human stated it rests on — ' +
+      'downstream stages read these to calibrate how much to trust the work they build on. Reachable ' +
+      'by the orchestrator only; a role agent that finds an open gate reports it and stops instead.',
     destructive: true,
     input: {
       gateId: z.string().optional().describe('Defaults to the single open gate, if there is exactly one'),
       decision: z.enum(['approve', 'changes_requested', 'reject']).describe('What the human told you to do'),
       comment: z.string().optional().describe('Required for changes_requested and reject; the human\'s reason'),
       decidedBy: z.string().optional().describe('The human\'s name. Defaults to the workspace git identity'),
+      confidence: z
+        .union([z.literal(60), z.literal(80), z.literal(95)])
+        .optional()
+        .describe('approve only: how sure the human said they were (60/80/95). Omit for an unqualified approval; downstream agents read it to calibrate caution'),
+      assumptions: z
+        .array(z.string())
+        .optional()
+        .describe('approve only: assumptions the human said the approval rests on. Surfaced to downstream stages'),
       agent: z.string().describe('Must be "orchestrator" — role agents cannot decide a gate')
     },
-    handler: ({ gateId, decision, comment, decidedBy, agent }) =>
+    handler: ({ gateId, decision, comment, decidedBy, confidence, assumptions, agent }) =>
       withRun((run) => {
         if (agent !== 'orchestrator') {
           return {
@@ -306,7 +317,13 @@ const tools = [
 
         let gate;
         try {
-          gate = decideGate(paths, run, target, decision, { decidedBy: by, comment: comment ?? null, source: 'chat' });
+          gate = decideGate(paths, run, target, decision, {
+            decidedBy: by,
+            comment: comment ?? null,
+            source: 'chat',
+            confidence: confidence ?? null,
+            assumptions: assumptions ?? null
+          });
         } catch (err) {
           return { state: 'refused', message: err.message };
         }
@@ -316,7 +333,13 @@ const tools = [
           decided: gate.id,
           decision: gate.decision,
           by: gate.decidedBy,
-          message: `${gate.decision} recorded for "${gate.stageTitle}" via chat, decided by ${by}.`
+          confidence: gate.confidence ?? null,
+          assumptions: gate.assumptions ?? [],
+          message:
+            `${gate.decision} recorded for "${gate.stageTitle}" via chat, decided by ${by}` +
+            (gate.confidence != null ? ` at ${gate.confidence}% confidence` : '') +
+            (gate.assumptions?.length ? `, ${gate.assumptions.length} assumption(s) noted` : '') +
+            '.'
         };
       })
   },
