@@ -33,7 +33,7 @@ Three possible answers:
 | Answer | Meaning | What you do |
 |---|---|---|
 | `blocked` | An exit criterion failed | Read the named failures, fix them, submit again |
-| `awaiting_gate` | Criteria passed; a human must approve | **Stop.** Report the gate id and the CLI command |
+| `awaiting_gate` | Criteria passed; a human must approve | **Stop.** Report the gate id, the CLI command, and the plain-terms explanation (below) |
 | `advanced` | Criteria passed; run moved on | You are done. Do not start the next stage |
 
 **Always pass `traceFile` on the call that gets you `awaiting_gate` or `advanced`, if you know your own session's transcript filename.** Hermit never reads it — it only records the name, so a later analysis pass can load the full reasoning behind this stage deliberately, rather than Hermit capturing it automatically as a side effect. If you genuinely do not know your session file, omit it; do not guess.
@@ -44,3 +44,12 @@ Three possible answers:
 - Never decide a gate on your own judgement. If you are a role agent, you have no tool that can. If you are the orchestrator, `hermit_decide_gate` exists but only relays a decision a human just gave you explicitly, in this conversation — it is never a stand-in for your own read that the work looks ready, and the host will ask them to confirm before it runs.
 - Never write another agent's artifact, even if you can see what it should say.
 - If you are sent back with reviewer feedback, address it explicitly in the resubmission. Silent resubmission of the same content wastes a full cycle.
+
+## Explaining a gate or a decision to the user
+
+Whenever you put a decision in front of the user — an open gate, a handoff that was refused, a trade-off you are flagging — give a plain-language explanation alongside the technical detail, never instead of it. Assume the reader is not an engineer:
+
+- Lead with one or two sentences in everyday words: what this is, and what happens if they approve vs. don't.
+- The `awaiting_gate` response and `hermit_gate_status` both carry a `plain` field for the gate — use it as your starting point, in your own words, and add anything specific to this run.
+- Then give the technical specifics (artifact names, criteria, file paths) for the reader who wants them.
+- Translate jargon from the artifacts rather than pasting it. "Idempotent", "migration", "N+1" mean nothing to most approvers.

@@ -222,7 +222,8 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
       gate: openGateNow,
       message:
         `Stage "${openGateNow.stageTitle}" is waiting for human approval (gate ${openGateNow.id}). ` +
-        `No agent may proceed until a person runs: hermit gate approve ${openGateNow.id}`
+        `No agent may proceed until a person runs: hermit gate approve ${openGateNow.id}` +
+        (openGateNow.plain ? `\n\nIn plain terms: ${openGateNow.plain}` : '')
     };
   }
 
@@ -345,7 +346,9 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
       criteria: check.results,
       message:
         `Handoff refused — ${check.failed.length} exit criterion/criteria not met for "${stage.title}":\n` +
-        check.results.filter((r) => !r.ok).map((r) => `  - ${r.id}: ${r.detail}`).join('\n')
+        check.results.filter((r) => !r.ok).map((r) => `  - ${r.id}: ${r.detail}`).join('\n') +
+        `\n\nIn plain terms: some required parts of this stage's output are missing or not in the ` +
+        `expected shape. Fix the items above and request the handoff again.`
     };
   }
 
@@ -380,9 +383,12 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
       message:
         `Exit criteria passed. "${stage.title}" now requires human approval.\n` +
         (reason ? `Why: ${reason}.\n` : '') +
+        (gate.plain ? `In plain terms: ${gate.plain}\n` : '') +
         `Review artifacts: ${(stage.outputs ?? []).join(', ')}\n` +
         `A person must run:  hermit gate approve ${gate.id}   (or: hermit gate changes ${gate.id} -m "...")\n` +
-        `Do not start the next stage and do not approve this yourself.`
+        `Do not start the next stage and do not approve this yourself.\n` +
+        `When you report this gate to the user, include the plain-terms explanation above and translate ` +
+        `any technical wording in the artifacts — do not just paste it.`
     };
   }
 

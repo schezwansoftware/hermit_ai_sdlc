@@ -238,7 +238,8 @@ const tools = [
     description:
       'Open human gates and their history. READ ONLY: this tool cannot decide anything. A decision ' +
       'comes from a person in a terminal, or from the orchestrator calling hermit_decide_gate after a ' +
-      'human has said what to decide and confirmed the call.',
+      'human has said what to decide and confirmed the call. Each open gate carries a `plain` field — ' +
+      'a layman\'s explanation of what approving it means; include it when you report the gate to the user.',
     readOnly: true,
     input: {},
     handler: () =>
@@ -247,6 +248,7 @@ const tools = [
           id: g.id,
           stage: g.stageId,
           title: g.stageTitle,
+          plain: g.plain ?? null,
           openedAt: g.openedAt,
           reviewArtifacts: g.reviewArtifacts,
           approveWith: `hermit gate approve ${g.id}`,

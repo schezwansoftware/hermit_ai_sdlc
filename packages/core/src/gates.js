@@ -81,6 +81,11 @@ export function openGate(paths, run, stage, criteriaResults) {
     comment: null,
     confidence: null,
     assumptions: [],
+    // HERMIT-18: a layman's explanation of what approving this gate means,
+    // carried on the gate so every surface that shows it — CLI, MCP status,
+    // the orchestrator's report to the user — can include it without
+    // re-deriving it from the stage.
+    plain: stage.plain ?? null,
     reviewArtifacts: stage.outputs ?? [],
     criteria: criteriaResults ?? []
   };

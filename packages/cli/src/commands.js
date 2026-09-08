@@ -480,6 +480,7 @@ export function cmdStatus(opts) {
     log('');
     for (const g of s.openGates) {
       log(`  ${c.yellow('⏸ AWAITING YOUR DECISION')} — ${g.stageTitle}`);
+      if (g.plain) log(`     ${c.dim(g.plain)}`);
       log(`     Review: ${(g.reviewArtifacts ?? []).map((a) => `.hermit/runs/${s.id}/artifacts/${a}.md`).join('\n             ')}`);
       log(`     ${c.cyan(`hermit gate approve ${g.id}`)}`);
       log(`     ${c.dim(`hermit gate changes ${g.id} -m "what needs to change"`)}`);
@@ -511,6 +512,7 @@ export function cmdNext(opts) {
   if (task.state === 'awaiting_gate') {
     log('');
     log(c.yellow('⏸ A human gate is open.'), 'No agent may proceed.');
+    if (task.gate?.plain) log(`  ${c.dim(`In plain terms: ${task.gate.plain}`)}`);
     log(`  ${c.cyan(`hermit gate approve ${task.gate.id}`)}`);
     log('');
     return task;
@@ -535,6 +537,7 @@ export function cmdGate(action, gateId, opts) {
     log('');
     for (const g of open) {
       log(`  ${c.yellow(g.id)}  ${g.stageTitle}`);
+      if (g.plain) log(`     ${c.dim(g.plain)}`);
       log(`     opened ${g.openedAt}`);
       log(`     review: ${(g.reviewArtifacts ?? []).join(', ')}`);
       for (const cr of g.criteria ?? []) log(`       ${cr.ok ? c.green('✓') : c.red('✗')} ${cr.id}`);

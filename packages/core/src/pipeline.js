@@ -27,6 +27,10 @@
  *                      holds for this run (see GATE_CONDITIONS in engine.js)
  * optIn: true       -> skipped unless the run explicitly turns it on
  * skippable: false  -> a prompt or flag may never stand this stage down
+ * plain: <text>     -> HERMIT-18: a layman's explanation of what a person is
+ *                      actually signing off at this gate and what happens next,
+ *                      carried into every message that asks for the decision.
+ *                      Every gated stage (`gate: 'hitl'` or `gateWhen`) has one.
  */
 export const DEFAULT_PIPELINE = {
   id: 'sdlc.default',
@@ -39,6 +43,10 @@ export const DEFAULT_PIPELINE = {
       agent: 'analyst',
       gate: 'hitl',
       skippable: false,
+      plain:
+        'This is the "did we understand what you asked for?" check. Approving means the written ' +
+        'description of the feature and its acceptance tests match what you actually want. Everything ' +
+        'built later is measured against this, so a wrong assumption here is expensive to fix later.',
       inputs: ['project-context', 'glossary'],
       outputs: ['requirements-spec', 'acceptance-criteria'],
       exitCriteria: [
@@ -54,6 +62,10 @@ export const DEFAULT_PIPELINE = {
       agent: 'architect',
       gate: 'hitl',
       skippable: false,
+      plain:
+        'This is the "does the technical plan make sense?" check. Approving means you accept how the ' +
+        'change will be built — which parts of the system it touches, the trade-offs chosen, and the ' +
+        'risks called out. Changing direction after this point means redoing design and build work.',
       inputs: ['requirements-spec', 'acceptance-criteria', 'codebase-map', 'project-context'],
       outputs: ['architecture-spec', 'adr', 'impact-analysis'],
       exitCriteria: [
@@ -77,6 +89,10 @@ export const DEFAULT_PIPELINE = {
       gate: 'hitl',
       optional: true,
       skipWhen: 'no-ui',
+      plain:
+        'Rough sketches of the screens and the steps a user takes through them — no colours or final ' +
+        'wording yet. Approving means the basic layout and flow are right, so the designer can start ' +
+        'adding detail.',
       inputs: ['requirements-spec', 'acceptance-criteria', 'architecture-spec', 'project-context'],
       outputs: ['ux-lofi'],
       exitCriteria: [
@@ -91,6 +107,9 @@ export const DEFAULT_PIPELINE = {
       gate: 'hitl',
       optional: true,
       skipWhen: 'no-ui',
+      plain:
+        'The screens filled in with real structure and every state shown — empty, loading, error, ' +
+        'success. Approving means the design handles the awkward cases, not just the happy path.',
       inputs: ['ux-lofi', 'requirements-spec', 'architecture-spec'],
       outputs: ['ux-midfi'],
       exitCriteria: [
@@ -105,6 +124,9 @@ export const DEFAULT_PIPELINE = {
       gate: 'hitl',
       optional: true,
       skipWhen: 'no-ui',
+      plain:
+        'The finished visual design — real colours, spacing, typography and accessibility notes — that ' +
+        'developers will build to pixel-for-pixel. Approving means this is how the feature should look.',
       inputs: ['ux-midfi', 'requirements-spec', 'architecture-spec'],
       outputs: ['ux-hifi', 'design-tokens'],
       exitCriteria: [
@@ -123,6 +145,10 @@ export const DEFAULT_PIPELINE = {
       // and `tracker` then executes against an approved plan rather than asking
       // for forgiveness afterwards.
       gateWhen: 'tracker',
+      plain:
+        'The work broken into a list of tasks. It normally advances on its own, but this run will also ' +
+        'create tickets in your tracker from this list — which notifies your team — so a person signs ' +
+        'off the plan first.',
       inputs: ['architecture-spec', 'acceptance-criteria', 'impact-analysis', 'ux-hifi'],
       outputs: ['work-plan'],
       exitCriteria: [
@@ -200,6 +226,10 @@ export const DEFAULT_PIPELINE = {
       gateWhen: 'major-upgrades',
       optional: true,
       optIn: true,
+      plain:
+        'The security scan found a fix that only exists in a new major version of a dependency. Major ' +
+        'upgrades can break things, so a person decides whether to take the upgrade now or accept the ' +
+        'risk and defer it.',
       // A quality gate over implementation's output, not a stage producing its
       // own artifact from scratch. See `reviews` doc on the `review` stage below.
       reviews: ['implementation_ui', 'implementation_backend'],
@@ -222,6 +252,10 @@ export const DEFAULT_PIPELINE = {
       agent: 'reviewer',
       gate: 'hitl',
       skippable: false,
+      plain:
+        'A second set of eyes has read the actual code changes. Approving means you accept the review ' +
+        'verdict and the code is good to proceed; asking for changes sends it back to the developer ' +
+        'with your comment.',
       // Declares that this stage's gate decision is about someone else's work.
       // `changes_requested` here means the *listed* stages' output is wrong, not
       // that the reviewer's own verdict needs redoing — engine.js routes the
@@ -268,6 +302,9 @@ export const DEFAULT_PIPELINE = {
       agent: 'orchestrator',
       gate: 'hitl',
       skippable: false,
+      plain:
+        'The final go/no-go before the change leaves Hermit. Everything is built, reviewed and tested; ' +
+        'approving means you are happy to ship it and a pull request gets opened next.',
       inputs: ['change-set', 'change-set-ui', 'review-report', 'test-report', 'requirements-spec', 'docs-update'],
       outputs: ['release-notes'],
       exitCriteria: [

@@ -162,6 +162,7 @@ Then \`hermit_next_task\`, which names the stage's agent and returns that agent'
 - From a terminal: \`hermit gate approve <id>\`, run by them. A workspace hook blocks that same command if *you* try to run it through Bash — that is the design working, not an obstacle to route around.
 - From chat: you may call \`hermit_decide_gate\`, but only in the same turn a human has explicitly told you what to decide and why. Claude Code will ask them to confirm before it runs — that confirmation is the decision, not your read of whether the work looks ready.
 - If nobody has said anything yet, **stop and report the gate**: its id and the exact command. That is the default. "Looks good" from you is never a reason to call the tool; only a human saying it is.
+- **Report the gate in plain language.** Each open gate carries a \`plain\` field — a layman's explanation of what approving it means. Lead with that (in your own words, fitted to this run), then the technical detail. Translate jargon out of the artifacts rather than pasting it — the approver may not be an engineer.
 - If the human qualifies an approval ("approve, but I'm only 80% sure", "approve, assuming X holds"), pass it through as \`confidence\` (60/80/95) and \`assumptions\` — their words, never a level you inferred. Downstream stages read it.
 
 Role subagents never have \`hermit_decide_gate\` in their tool list — only you, the orchestrator, can reach it.

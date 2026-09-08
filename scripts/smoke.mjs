@@ -60,8 +60,18 @@ for (const s of DEFAULT_PIPELINE.stages) {
     );
     produced.add(out);
   }
+  // HERMIT-18: every stage that can stop for a human — an unconditional
+  // `hitl` gate or a conditional `gateWhen` — must carry a plain-language
+  // explanation of what approving it means, for the person deciding.
+  if (s.gate === 'hitl' || s.gateWhen) {
+    assert.ok(
+      typeof s.plain === 'string' && s.plain.length > 40,
+      `gated stage ${s.id} has no usable \`plain\` explanation for the approver`
+    );
+  }
 }
 console.log('✓ pipeline graph is consistent (inputs produced upstream, scopes match)');
+console.log('✓ every gated stage carries a plain-language explanation for the approver');
 
 // A specialist may narrow what it reads — that is the point of role scoping — but
 // it must be able to write every output of the stage it claims, or submitArtifact
@@ -236,6 +246,15 @@ for (let guard = 0; guard < 40; guard++) {
   if (open.length) {
     const g = open[0];
     gatesHit++;
+    // HERMIT-18: the gate, and the message a caller sees, must carry the
+    // plain-language explanation for the person deciding.
+    assert.ok(g.plain && g.plain.length > 40, `gate on ${g.stageId} has no plain-language explanation`);
+    const waiting = nextTask({ paths, run: loadRun(paths, run.id), registry: reg });
+    assert.equal(waiting.state, 'awaiting_gate');
+    assert.ok(
+      waiting.message.includes('In plain terms:') && waiting.message.includes(g.plain),
+      `the awaiting_gate message for ${g.stageId} must spell out the plain-terms explanation`
+    );
     // Only 'cli' and 'chat' are trusted sources. Nothing else gets near a decision.
     assert.throws(
       () => decideGate(paths, cur, g.id, 'approve', { decidedBy: 'agent', source: 'mcp' }),
