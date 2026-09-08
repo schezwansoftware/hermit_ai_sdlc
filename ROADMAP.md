@@ -201,6 +201,17 @@ Approve/reject was binary: a 60%-confident "yes, probably" was recorded exactly 
 - Both doors carry it: `hermit gate approve <id> --confidence 80 --assume "a; b"` on the CLI, and `confidence` / `assumptions` params on `hermit_decide_gate` for the orchestrator
 - Verified by `npm run test` (smoke)
 
+### 11. Plain-language approval gates (HERMIT-18) — **shipped**
+
+The person approving a gate may not be an engineer. The message was a stage title, artifact names and a CLI command — nothing saying, in everyday words, what they were signing off.
+
+**As built:**
+- Every gated stage (`gate: 'hitl'` or `gateWhen`) carries a `plain` field in `pipeline.js` — one or two sentences: what this is, what approving vs. not approving means
+- `openGate()` copies it onto the gate record; `engine.js` leads the `awaiting_gate` messages and the handoff-refusal message with `In plain terms: …`
+- `hermit_gate_status` exposes it; `hermit gate list` / `next` / `status` print it
+- `handoff-protocol`, `orchestrator` and `pipeline-map` playbooks + both harness compilers require the agent to **lead with the plain explanation in its own words and translate artifact jargon**, then give the technical detail — so it holds whether a person reads the CLI or an agent relays the gate in chat
+- Verified by `npm run test` (smoke asserts every gated stage has a usable `plain` and that the message spells it out)
+
 
 ---
 
