@@ -11,7 +11,8 @@ import {
   ONBOARDING_ARTIFACTS, ONBOARDING_STATUS,
   securityStatus, setSecurityStatus, SECURITY_ARTIFACTS, SECURITY_STATUS, MANIFEST_FILES,
   parseDirectives, resolveTargets,
-  nextTask, runStatus, decideGate, getGate, openGates, readArtifact, listArtifacts, resolveDecider
+  nextTask, runStatus, decideGate, getGate, openGates, readArtifact, listArtifacts, resolveDecider,
+  HERMIT_VERSION
 } from '@hermit/core';
 import { compileAll, installPacks, writeFiles, orphanedFiles, pruneOrphans } from './compile/index.js';
 import { HARNESSES, resolveHarnesses } from './compile/harnesses.js';
@@ -694,6 +695,7 @@ export function cmdDoctor(opts) {
     log(`  ${c.red('✗')} .hermit/ not found. Run: npx hermit init`);
     return { ok: false };
   }
+  log(`  ${c.green('✓')} Hermit v${HERMIT_VERSION}`);
   log(`  ${c.green('✓')} workspace at ${p.root}`);
 
   const config = readJson(p.config, {});

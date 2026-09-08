@@ -1,3 +1,4 @@
+export * from './version.js';
 export * from './paths.js';
 export * from './frontmatter.js';
 export * from './registry.js';

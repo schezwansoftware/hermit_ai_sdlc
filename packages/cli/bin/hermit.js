@@ -3,11 +3,13 @@ import {
   cmdInit, cmdSync, cmdStart, cmdStatus, cmdRuns, cmdNext,
   cmdGate, cmdResume, cmdArtifacts, cmdJournal, cmdDoctor, cmdProjects, cmdOnboard, cmdSecurity
 } from '../src/commands.js';
+import { HERMIT_VERSION } from '@hermit/core';
 
 const HELP = `
 hermit — agentic SDLC pipeline for GitHub Copilot and Claude Code workspaces
 
   Setup
+    hermit version                    print the Hermit version (also: --version, -v)
     hermit init [--force]              install agents and host configs into this workspace
         --harness <a,b>                copilot (default) · claude — remembered after the first run
     hermit sync [--force]              recompile .hermit/ into your harness's formats
@@ -68,6 +70,8 @@ function parse(argv) {
       opts.message = argv[++i];
     } else if (a === '-h') {
       opts.help = true;
+    } else if (a === '-v') {
+      opts.version = true;
     } else {
       positional.push(a);
     }
@@ -78,6 +82,11 @@ function parse(argv) {
 
 const { positional, opts } = parse(process.argv.slice(2));
 const [command, ...rest] = positional;
+
+if (opts.version || command === 'version') {
+  console.log(`hermit ${HERMIT_VERSION}`);
+  process.exit(0);
+}
 
 if (!command || opts.help || command === 'help') {
   console.log(HELP);

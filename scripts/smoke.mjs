@@ -15,8 +15,13 @@ import {
   nextTask, submitArtifact, requestHandoff, runStatus, decideGate, openGates, getStage, saveRun,
   writeOnboardingArtifact, onboardingStatus, readArtifact, ONBOARDING_ARTIFACTS,
   SECURITY_ARTIFACTS, reconcile, askGuidance, answerGuidance, openGuidanceQueries, getGuidanceQuery,
-  queryTelemetry, runTrace, lastAttemptTrace
+  queryTelemetry, runTrace, lastAttemptTrace, HERMIT_VERSION
 } from '@hermit/core';
+
+// The version `hermit doctor` / `hermit --version` report. Must be semver so a
+// bump is unambiguous when a feature ships.
+assert.match(HERMIT_VERSION, /^\d+\.\d+\.\d+$/, 'HERMIT_VERSION must be semver');
+console.log(`✓ Hermit version ${HERMIT_VERSION}`);
 
 const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hermit-smoke-'));
