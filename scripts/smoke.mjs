@@ -224,7 +224,7 @@ const BODIES = {
 };
 
 let gatesHit = 0, stagesDone = 0, changesRequestedTested = false, chatDecisionTested = false,
-  reviewChangesRequestedTested = false;
+  reviewChangesRequestedTested = false, provisionalApprovalTested = false, caveatSurfaced = false;
 
 for (let guard = 0; guard < 40; guard++) {
   let cur = loadRun(paths, run.id);
@@ -248,6 +248,17 @@ for (let guard = 0; guard < 40; guard++) {
       () => decideGate(paths, cur, g.id, 'changes_requested', { decidedBy: 'harshit', source: 'chat' }),
       /needs a reason/,
       'changes_requested with no comment must be refused regardless of source'
+    );
+    // A confidence level / assumptions describe an approval only (HERMIT-7).
+    assert.throws(
+      () => decideGate(paths, cur, g.id, 'changes_requested', { decidedBy: 'harshit', comment: 'x', source: 'cli', confidence: 80 }),
+      /sends the work back/,
+      'confidence on a changes_requested decision must be refused, not silently dropped'
+    );
+    assert.throws(
+      () => decideGate(paths, cur, g.id, 'approve', { decidedBy: 'harshit', source: 'cli', confidence: 70 }),
+      /confidence must be one of/,
+      'a confidence level outside 60/80/95 must be refused'
     );
     // Exercise the changes_requested path once, on the architecture gate.
     if (g.stageId === 'architecture' && !changesRequestedTested) {
@@ -338,6 +349,20 @@ for (let guard = 0; guard < 40; guard++) {
       saveRun(paths, cur);
       continue;
     }
+    // The architecture re-review (attempt 2) is approved provisionally: the
+    // approver is only 80% sure and names the assumptions it rests on. A
+    // downstream stage's brief must then carry those caveats forward.
+    if (g.stageId === 'architecture' && changesRequestedTested && !provisionalApprovalTested) {
+      provisionalApprovalTested = true;
+      const decided = decideGate(paths, cur, g.id, 'approve', {
+        decidedBy: 'harshit', source: 'cli', confidence: 80,
+        assumptions: ['peak traffic stays under 2x current', 'the redirect host does not change']
+      });
+      assert.equal(decided.confidence, 80, 'the gate record must keep the confidence level');
+      assert.equal(decided.assumptions.length, 2, 'the gate record must keep the assumptions');
+      saveRun(paths, cur);
+      continue;
+    }
     decideGate(paths, cur, g.id, 'approve', { decidedBy: 'harshit', source: 'cli' });
     saveRun(paths, cur);
     continue;
@@ -347,6 +372,21 @@ for (let guard = 0; guard < 40; guard++) {
   const t = nextTask({ paths, run: cur, registry: reg });
   if (t.state === 'complete') break;
   assert.equal(t.state, 'task', `unexpected state ${t.state}: ${t.message}`);
+
+  // Once architecture has been approved provisionally, every later stage's
+  // brief carries the caveat forward until the run ends.
+  if (provisionalApprovalTested && t.stage.id !== 'architecture') {
+    assert.ok(
+      t.upstreamCaveats.some((c) => c.stage === 'architecture' && c.confidence === 80),
+      `${t.stage.id} brief must carry the provisional architecture approval`
+    );
+    assert.ok(
+      t.rendered.includes('Upstream approvals you are building on') &&
+        t.rendered.includes('peak traffic stays under 2x current'),
+      `${t.stage.id} rendered brief must spell out the upstream caveat and its assumptions`
+    );
+    caveatSurfaced = true;
+  }
 
   const stage = getStage(DEFAULT_PIPELINE, t.stage.id);
   for (const out of stage.outputs ?? []) {
@@ -365,6 +405,9 @@ for (let guard = 0; guard < 40; guard++) {
 const final = runStatus({ paths, run: loadRun(paths, run.id) });
 assert.equal(final.status, 'completed', `run did not complete: ${JSON.stringify(final.stages.filter(s=>s.status!=='done'))}`);
 assert.equal(gatesHit, 9, `expected 9 gate encounters (7 gates + 1 architecture re-review + 1 review re-review), got ${gatesHit}`);
+assert.ok(provisionalApprovalTested, 'the provisional-approval path must have been exercised');
+assert.ok(caveatSurfaced, 'a downstream brief must have surfaced the provisional upstream approval');
+console.log('✓ provisional gate approval: confidence + assumptions recorded and carried into downstream briefs');
 
 console.log(`✓ ${stagesDone} stage completions, ${gatesHit} gate encounters`);
 console.log(`✓ run completed: ${final.artifacts.length} artifacts`);

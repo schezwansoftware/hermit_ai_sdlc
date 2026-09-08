@@ -124,6 +124,7 @@ If a gate is open, **stop and report it**. Do not start the next stage, and do n
 
 - From a terminal: \`hermit gate approve <id>\` (always available).
 - From chat: the orchestrator alone may call \`hermit_decide_gate\`, and only in the same turn a human has explicitly said what to decide and why. VS Code will ask them to confirm before it runs — that confirmation is the decision, not anything you inferred. If nobody has said anything yet, report the gate and wait; role agents never see this tool at all.
+- If the human qualifies an approval ("approve, but only 80% sure", "approve, assuming X"), relay it as \`confidence\` (60/80/95) and \`assumptions\` — never a level they did not state. Downstream stages read it to calibrate caution.
 
 ${gates.length} of the ${pipeline.stages.length} stages are human-gated: ${gates.map((s) => `\`${s.id}\``).join(', ')}.
 

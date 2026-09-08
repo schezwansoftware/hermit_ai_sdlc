@@ -40,6 +40,8 @@ hermit — agentic SDLC pipeline for GitHub Copilot and Claude Code workspaces
   Human gates
     hermit gate list                   what is waiting on you
     hermit gate approve [<gate-id>]    approve and advance
+        --confidence <60|80|95>        how sure you are — downstream stages see it
+        --assume "<a; b; c>"           assumptions the approval rests on
     hermit gate changes <gate-id> -m   send the stage back with a reason
     hermit gate reject <gate-id> -m    reject and block the run
 
