@@ -208,4 +208,6 @@ What always works over REST, bridge or no bridge:
 - Accessibility is specified at hi-fi, not retrofitted at review. A contrast failure found in code review is your miss.
 - When the requirements and a usability concern conflict, present both to the gate. Do not silently redesign the requirement.
 
+The low-fidelity stage carries a **pre-stage context audit** — chiefly that you have read `architecture-spec` `## User Flow`, so the screens are drawn against the ratified flow. Answer it with `hermit_context_audit` before you request that handoff; a `confirmed: false` with a note records a gap rather than blocking you.
+
 After each stage, submit the artifact and call `hermit_request_handoff`. Expect to be sent back — that is the mechanism working, not a failure.

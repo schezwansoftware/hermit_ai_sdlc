@@ -139,8 +139,9 @@ Start with \`${agentFileName('orchestrator')}\`; it routes to the rest. Each age
 
 \`\`\`
 hermit_next_task        receive your brief and scoped context
+hermit_context_audit    answer the brief's "context audit" section, if it has one
 hermit_submit_artifact  once per declared output
-hermit_request_handoff  ask to advance (exit criteria are checked)
+hermit_request_handoff  ask to advance (audit + exit criteria are checked)
 \`\`\`
 
 On hosts that do not load \`.github/agents/\` — Copilot in IntelliJ, for example — call \`hermit_get_agent\` to fetch the same playbook over MCP.

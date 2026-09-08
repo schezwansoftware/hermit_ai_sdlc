@@ -15,7 +15,7 @@ import {
   layout, loadRegistry, resolveProjects, createRun, loadRun, resolveStageAgent,
   nextTask, submitArtifact, requestHandoff, runStatus, buildContextBundle,
   techScope, isBackendProject, decideGate, openGates, saveRun, DEFAULT_PIPELINE,
-  writeOnboardingArtifact
+  writeOnboardingArtifact, recordContextAudit, auditForStage, criteriaContext
 } from '@hermit/core';
 
 const repo = path.dirname(fileURLToPath(import.meta.url)).replace(/\/scripts$/, '');
@@ -216,6 +216,18 @@ const REST = {
 };
 for (const [id, body] of Object.entries({ 'architecture-spec': ARCH_BASE, ...REST })) {
   submitArtifact({ paths, run: loadRun(paths, run.id), registry, artifactId: id, content: body, agentId: 'architect' });
+}
+// P1-2: architecture carries a pre-stage context audit; answer it so the
+// handoff refusal below is unambiguously about the missing design section.
+{
+  const ar = loadRun(paths, run.id);
+  const items = auditForStage('architecture', { context: criteriaContext(ar, DEFAULT_PIPELINE), attempt: 1 });
+  recordContextAudit(paths, ar, {
+    stageId: 'architecture', attempt: 1, agentId: 'architect',
+    findings: items.map((i) => ({ id: i.id, confirmed: true })),
+    context: criteriaContext(ar, DEFAULT_PIPELINE)
+  });
+  saveRun(paths, ar);
 }
 let h = requestHandoff({ paths, run: loadRun(paths, run.id), registry, agentId: 'architect' });
 assert.equal(h.state, 'blocked', 'a server-side run must require ## Backend Design');

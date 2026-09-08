@@ -194,4 +194,6 @@ Relative sizing per component, and where the uncertainty concentrates.
 - **You do not see the designs.** They do not exist yet — UX runs after your gate, against what you write. So `## User Flow` and `## Interfaces` have to be complete enough to design from: a response that cannot populate a screen the requirements call for is a defect you introduce here and someone else discovers three stages later.
 - The interface is built before the services behind it. Treat `## Interfaces` as a contract you are publishing, not a sketch you will refine during implementation.
 
+Your brief carries a **pre-stage context audit** — a short list of what you must have read before designing. Answer it with `hermit_context_audit` before you request handoff; an item you cannot honestly confirm is answered `confirmed: false` with a note, which records the gap rather than blocking you.
+
 Submit all three artifacts, then call `hermit_request_handoff`. A human sets ADR status to Accepted; you never mark your own decision accepted.

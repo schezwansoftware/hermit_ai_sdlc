@@ -65,17 +65,20 @@ Two stages invert the default: `tracker` and `security` are off until asked for,
 
 ## Handoff, concretely
 
-An agent never calls another agent. It calls three tools:
+An agent never calls another agent. It calls these tools:
 
 ```
 hermit_next_task        -> receives its playbook + only the context it is entitled to
+hermit_context_audit    -> answers the brief's pre-stage context audit, if it has one
 hermit_submit_artifact  -> writes one declared output
-hermit_request_handoff  -> asks to advance; exit criteria are checked first
+hermit_request_handoff  -> asks to advance; the context audit, then exit criteria, are checked first
 ```
+
+Some stages (architecture, planning, both implementation stages, low-fidelity UX) open their brief with a short **context audit** — `did you read X, did you check Y` items. The agent answers each through `hermit_context_audit` before requesting handoff; an item it cannot confirm is answered `confirmed: false` with a note, which records the gap without blocking. Catching a missing fact here costs nothing; catching it at the gate costs a full rework cycle.
 
 `hermit_request_handoff` has three possible answers:
 
-- **blocked** — an exit criterion failed. The response names which one and why. The agent stays on its stage.
+- **blocked** — the context audit is unanswered, or an exit criterion failed. The response names which items and why. The agent stays on its stage.
 - **awaiting_gate** — criteria passed, but this stage is human-gated. The run halts until a person runs `hermit gate approve <id>`.
 - **advanced** — criteria passed, no gate. `run.currentStage` moves on, and the next `hermit_next_task` returns a different agent's brief.
 

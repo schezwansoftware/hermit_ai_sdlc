@@ -6,6 +6,18 @@ work: patch for fixes and maintenance, minor for a backward-compatible feature,
 major for a breaking change to the CLI, the MCP tools, or the gate/artifact/
 pipeline contracts.
 
+## 1.2.0
+
+- Pre-stage context audit (HERMIT-9): architecture, planning, both
+  implementation stages and low-fidelity UX open their brief with a short
+  `did you read X, did you check Y` checklist. The agent answers it through the
+  new `hermit_context_audit` tool; `hermit_request_handoff` is refused until
+  every applicable item has an answer. An item answered `confirmed: false` with
+  a note is a recorded, surfaced gap — not a blocker. Answers and flagged gaps
+  are journalled (`context.audited`) and grouped per attempt by `hermit_trace`;
+  `auditFindingsSummary()` aggregates gap rates across runs for the feedback
+  loop on which checks earn their place.
+
 ## 1.1.0
 
 - Plain-language approval gates (HERMIT-18): every gated stage carries a `plain`

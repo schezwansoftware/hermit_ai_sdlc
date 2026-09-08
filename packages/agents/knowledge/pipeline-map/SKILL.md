@@ -90,6 +90,10 @@ Every gated artifact contains a `## In Plain Terms` section its author wrote for
 
 No agent decides a gate on its own judgement. A decision is either a person running the CLI, or the orchestrator relaying one a human just gave it explicitly, in chat, through `hermit_decide_gate` — a tool no role agent has. If you are not the orchestrator and a gate is open, report it and stop; do not try to resolve it yourself.
 
+## The pre-stage context audit
+
+Architecture, planning, both implementation stages and low-fidelity UX open their brief with a short **context audit** — `did you read X, did you check Y` items scoped to that stage. Answer every one with `hermit_context_audit` before requesting handoff; the handoff is refused until you do. An item you cannot confirm is answered `confirmed: false` with a note — that records the gap and lets you design around it or escalate, it does not block you. The answers and flagged gaps are journalled, so over time the pipeline learns which checks catch real gaps.
+
 ## Re-entry
 
 When a gate returns `changes_requested`, your next `hermit_next_task` includes `reviewerFeedback` with the comment. Address it explicitly. Resubmitting unchanged content wastes a full cycle and will be rejected again.

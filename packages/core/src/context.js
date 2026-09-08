@@ -193,7 +193,7 @@ export function outputContract(stage, context = {}) {
 }
 
 /** Render a bundle as the markdown an agent actually reads. */
-export function renderBundle(bundle, { playbook, contract }) {
+export function renderBundle(bundle, { playbook, contract, audit = '' }) {
   const out = [];
   out.push(`# Hermit task — ${bundle.stage.title}`);
   out.push('');
@@ -223,6 +223,13 @@ export function renderBundle(bundle, { playbook, contract }) {
   out.push('');
   out.push(playbook);
   out.push('');
+
+  // P1-2: the pre-stage context audit, when this stage carries one. Placed
+  // right after the playbook because it is the first thing to do, before any
+  // of the context below is read in anger.
+  if (audit) {
+    out.push(audit);
+  }
 
   if (bundle.knowledge.length) {
     out.push('## Knowledge');

@@ -16,6 +16,10 @@ import {
   nextTask,
   submitArtifact,
   requestHandoff,
+  recordContextAudit,
+  contextAuditStatus,
+  auditForStage,
+  criteriaContext,
   skipStages,
   runStatus,
   readArtifact,
@@ -82,8 +86,9 @@ should be.
 
 Normal agent loop:
   1. hermit_next_task      receive your stage brief and the context you may use
-  2. hermit_submit_artifact  once per declared output
-  3. hermit_request_handoff  ask to advance
+  2. hermit_context_audit  if your brief carries a "context audit" section, answer it first
+  3. hermit_submit_artifact  once per declared output
+  4. hermit_request_handoff  ask to advance
 
 Call hermit_next_task with no format argument. The default already returns the
 whole brief as one string; format: "json" JSON-encodes the same prose (roughly
@@ -188,8 +193,9 @@ const tools = [
     name: 'hermit_request_handoff',
     title: 'Request handoff',
     description:
-      'Ask to advance. Exit criteria are checked first. Returns blocked (with the failing criteria), ' +
-      'awaiting_gate (a human must approve), or advanced (the next agent takes over). Always pass ' +
+      'Ask to advance. The pre-stage context audit (if your stage has one) and then the exit ' +
+      'criteria are checked first. Returns blocked (with the failing criteria or the unanswered ' +
+      'audit items), awaiting_gate (a human must approve), or advanced (the next agent takes over). Always pass ' +
       '`traceFile` when criteria pass — Hermit cannot see your reasoning, only where the full record ' +
       'of it lives, for a later analysis pass to load deliberately.',
     input: {
@@ -204,6 +210,61 @@ const tools = [
     },
     handler: ({ agent, summary, traceFile }) =>
       withRun((run, reg) => requestHandoff({ paths, run, registry: reg, agentId: agent, summary, traceFile }))
+  },
+  {
+    name: 'hermit_context_audit',
+    title: 'Record the pre-stage context audit',
+    description:
+      'Answer the pre-stage context audit for your current stage. Some stages — architecture, ' +
+      'planning, both implementation stages, low-fi UX — carry a short list of "did you read X, did ' +
+      'you check Y" items in your brief under "Before you start: context audit". Answer every one ' +
+      'here before calling hermit_request_handoff; the handoff is refused until you do. Pass ' +
+      '`confirmed: true` once you have genuinely done the thing, or `confirmed: false` with a short ' +
+      '`note` naming the gap — a `false` is recorded and surfaced, not a blocker. Re-call it to ' +
+      'replace your answers if you go back and do the reading.',
+    input: {
+      agent: z.string().describe('Your agent id'),
+      findings: z
+        .array(
+          z.object({
+            id: z.string().describe('The audit item id, e.g. read-design-section'),
+            confirmed: z.boolean().describe('true if you have actually done it; false if it is a gap'),
+            note: z.string().optional().describe('Short context — expected on any item you answer false')
+          })
+        )
+        .describe('One entry per audit item shown in your brief')
+    },
+    handler: ({ agent, findings }) =>
+      withRun((run) => {
+        const stage = getStage(DEFAULT_PIPELINE, run.currentStage);
+        if (!stage) return { state: 'no_active_stage', message: `Run ${run.id} has no active stage.` };
+        const attempt = Math.max(1, run.stages[stage.id]?.attempts ?? 1);
+        const context = criteriaContext(run);
+        if (!auditForStage(stage.id, { context, attempt }).length) {
+          return {
+            state: 'not_applicable',
+            message: `Stage "${stage.id}" has no context audit. Go straight to hermit_request_handoff.`
+          };
+        }
+        let result;
+        try {
+          result = recordContextAudit(paths, run, { stageId: stage.id, attempt, agentId: agent, findings, context });
+        } catch (err) {
+          return { state: 'refused', message: err.message };
+        }
+        saveRun(paths, run);
+        const status = contextAuditStatus(run, stage.id, { context, attempt });
+        return {
+          recorded: stage.id,
+          attempt,
+          gaps: result.gaps,
+          satisfied: status.satisfied,
+          message: result.gaps.length
+            ? `Audit recorded. You flagged ${result.gaps.length} gap(s): ${result.gaps.map((g) => g.id).join(', ')}. ` +
+              'Resolve or escalate each before you rely on it — then request handoff.'
+            : 'Audit recorded, every item confirmed. You may request handoff once the exit criteria are met.'
+        };
+      })
   },
   {
     name: 'hermit_get_artifact',
