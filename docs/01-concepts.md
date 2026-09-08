@@ -58,8 +58,8 @@ Matching is mechanical — cue words against a fixed table of stage aliases, no 
 
 Two properties make this safe to expose to prose:
 
-1. **It is frozen at creation.** Nothing re-reads the intent later, so an agent cannot rephrase its way into or out of a stage.
-2. **Four stages are locked.** Requirements, architecture, review and delivery are refused with a reason, at two layers — the parser, and `createRun` itself, so a direct MCP call is refused too. Those four hold the gates the design rests on, and a gate a sentence can dissolve is not a gate.
+1. **The intent is never re-read.** No agent rephrases its way into or out of a stage. The one exception is mechanical, not linguistic: once requirements or architecture is done, the orchestrator may call `hermit_skip_stages` to stand *optional, not-yet-started* stages down when the run has settled that they produce nothing (no interface → no UX stages). It narrows only, never widens; it needs a reason; and it is an intimation to the user, not a gate.
+2. **Four stages are locked.** Requirements, architecture, review and delivery are refused with a reason, at every layer — the parser, `createRun`, and `hermit_skip_stages` too. Those four hold the gates the design rests on, and a gate a sentence can dissolve is not a gate.
 
 Two stages invert the default: `tracker` and `security` are off until asked for, because both act outward — one writes to a real tracker, the other changes dependency manifests.
 

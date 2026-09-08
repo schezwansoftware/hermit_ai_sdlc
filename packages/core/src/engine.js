@@ -350,6 +350,105 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
   };
 }
 
+/**
+ * The orchestrator stands optional stages down mid-run.
+ *
+ * HERMIT-17: once requirements or architecture is settled, a run often knows
+ * more about itself than the intent sentence did — a change that turned out to
+ * need no interface should not drag three UX stages and a UI build to the end
+ * just because nobody could rule them out on day one. This lets the
+ * orchestrator drop such stages while the run is live.
+ *
+ * No gate. Which stages a run includes was never a human approval to begin
+ * with (see `directives.js` — a prompt decides it, mechanically), so narrowing
+ * it later is an intimation, not a decision to ratify. The caller must still
+ * pass a `reason`; it is journalled and handed back so the user is told why a
+ * stage stopped being part of the run.
+ *
+ * What does not move:
+ *  - The four locked stages (`skippable === false`). Same refusal the parser
+ *    and `createRun` give — a check on work that exists is not something any
+ *    caller removes.
+ *  - Any stage that is not still `pending`. A stage that ran, is running, or
+ *    was already skipped is history; only untouched downstream stages are in
+ *    play.
+ *  - Anything, until `requirements` or `architecture` is `done`, so a scope
+ *    change always sits on top of a ratified upstream.
+ */
+export function skipStages({ paths, run, pipeline = DEFAULT_PIPELINE, stageIds, reason, decidedBy = null }) {
+  reconcile(paths, run, pipeline);
+
+  const trimmed = String(reason ?? '').trim();
+  if (!trimmed) {
+    return {
+      state: 'denied', skipped: [], alreadySkipped: [], refused: [], intimation: null,
+      message: 'A reason is required — it is recorded and reported to the user as why the stage was dropped.'
+    };
+  }
+
+  const ratified = ['requirements', 'architecture'].some(
+    (id) => run.stages[id]?.status === STAGE_STATUS.DONE
+  );
+  if (!ratified) {
+    return {
+      state: 'denied', skipped: [], alreadySkipped: [], refused: [], intimation: null,
+      message:
+        'Mid-run scope changes are only allowed once requirements or architecture is complete — ' +
+        'nothing has ratified this run yet.'
+    };
+  }
+
+  const ids = [...new Set((Array.isArray(stageIds) ? stageIds : [stageIds]).filter(Boolean))];
+  const skipped = [];
+  const alreadySkipped = [];
+  const refused = [];
+
+  for (const id of ids) {
+    const stage = getStage(pipeline, id);
+    if (!stage) { refused.push({ id, reason: 'no such stage in the pipeline' }); continue; }
+    if (stage.skippable === false) {
+      refused.push({ id, reason: `"${id}" carries a human gate and cannot be skipped by any route` });
+      continue;
+    }
+    const st = run.stages[id];
+    if (!st) { refused.push({ id, reason: 'stage not present in this run' }); continue; }
+    if (st.status === STAGE_STATUS.SKIPPED) { alreadySkipped.push(id); continue; }
+    if (st.status !== STAGE_STATUS.PENDING) {
+      refused.push({ id, reason: `"${id}" is ${st.status} — only a stage that has not started can be stood down` });
+      continue;
+    }
+
+    st.status = STAGE_STATUS.SKIPPED;
+    st.completedAt = new Date().toISOString();
+    run.directives = run.directives ?? [];
+    run.directives.push({
+      target: id, label: stage.title, stages: [id], action: 'skip',
+      phrase: `orchestrator, mid-run: ${trimmed}`, via: 'orchestrator'
+    });
+    journal(paths, run.id, { event: 'stage.skipped', stage: id, via: 'orchestrator', reason: trimmed, decidedBy });
+    skipped.push(id);
+  }
+
+  if (skipped.length) {
+    saveRun(paths, run);
+    reconcile(paths, run, pipeline);
+  }
+
+  return {
+    state: skipped.length ? 'scope_narrowed' : 'no_change',
+    skipped, alreadySkipped, refused, reason: trimmed,
+    intimation: skipped.length
+      ? `Scope narrowed mid-run — ${skipped.join(', ')} stood down: ${trimmed}. ` +
+        'No approval was required; report this to the user.'
+      : null,
+    message: [
+      skipped.length ? `Skipped: ${skipped.join(', ')}.` : 'No stages skipped.',
+      alreadySkipped.length ? `Already skipped: ${alreadySkipped.join(', ')}.` : '',
+      refused.length ? `Refused: ${refused.map((r) => `${r.id} (${r.reason})`).join('; ')}.` : ''
+    ].filter(Boolean).join(' ')
+  };
+}
+
 export function runStatus({ paths, run, pipeline = DEFAULT_PIPELINE }) {
   reconcile(paths, run, pipeline);
   const idx = run.currentStage ? stageIndex(pipeline, run.currentStage) : pipeline.stages.length;
