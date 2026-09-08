@@ -85,6 +85,40 @@ function sharedIn(dir, belongs) {
     .filter(belongs);
 }
 
+/**
+ * Pull the body of one `## Heading` section out of a markdown document, up to
+ * the next heading of the same or a higher level (or end of document).
+ *
+ * Used to lift the agent-written `## In Plain Terms` explanation out of a gated
+ * artifact so the gate message can carry what was actually submitted, in the
+ * producer's own plain words, rather than only a fixed description of what the
+ * gate means. Returns null when the section is absent or empty.
+ */
+export function extractSection(markdown, heading) {
+  if (typeof markdown !== 'string') return null;
+  const norm = heading.replace(/^#+\s*/, '').trim().toLowerCase();
+  const lines = markdown.split('\n');
+  let start = -1;
+  let level = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(#{1,6})\s+(.*?)\s*$/);
+    if (m && m[2].trim().toLowerCase() === norm) {
+      start = i + 1;
+      level = m[1].length;
+      break;
+    }
+  }
+  if (start === -1) return null;
+  const out = [];
+  for (let i = start; i < lines.length; i++) {
+    const m = lines[i].match(/^(#{1,6})\s+/);
+    if (m && m[1].length <= level) break;
+    out.push(lines[i]);
+  }
+  const body = out.join('\n').trim();
+  return body.length ? body : null;
+}
+
 export function listArtifacts(paths, runId) {
   const dir = paths.artifactsDir(runId);
   const own = fs.existsSync(dir) ? fs.readdirSync(dir).map((f) => f.replace(/\.(md|json|txt)$/, '')) : [];

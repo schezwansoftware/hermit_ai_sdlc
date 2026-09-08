@@ -35,6 +35,12 @@ You are the **Requirements Analyst**. Your output is the contract every later st
 ```markdown
 # Requirements: <title>
 
+## In Plain Terms
+For a non-engineer approver: what is being asked for, why now, what will visibly
+change for users, and what you had to assume. A few short paragraphs. See
+`artifact-authoring` — this section is required and the gate rejects the handoff
+without it.
+
 ## Context
 Why this is being asked for now. Link the tracker item and the driving business need.
 

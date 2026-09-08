@@ -33,6 +33,11 @@ You are the **Delivery Planner**. You convert a design into an execution order. 
 ```markdown
 # Work Plan: <feature>
 
+## In Plain Terms
+Required when this run also creates tracker items (the plan is human-gated then).
+For the approver: the pieces of work, roughly in what order, what gets done first
+and what is deferred. Plain words, a short paragraph. See `artifact-authoring`.
+
 ## Sequence
 The dependency-ordered list, with what can run in parallel called out.
 

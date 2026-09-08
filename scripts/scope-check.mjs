@@ -180,6 +180,7 @@ function runAtSecurity(majorUpgrades) {
     '**Applied**: 2',
     `**Major upgrades**: ${majorUpgrades}`,
     '',
+    '## In Plain Terms', 'The scan found three vulnerable packages; two were fixed automatically and verified against the tests.',
     '## Method', 'npm audit --json',
     '## Findings', '| pkg | 1.0.0 | CVE-1 | high | yes | 1.0.1 | patch |',
     '## Applied', '- lodash 4.17.20 → 4.17.21 — CVE-2021-23337 (minor), suite green',

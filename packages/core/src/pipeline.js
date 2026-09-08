@@ -53,7 +53,8 @@ export const DEFAULT_PIPELINE = {
         { id: 'spec-written', type: 'artifact_exists', artifact: 'requirements-spec' },
         { id: 'ac-written', type: 'artifact_exists', artifact: 'acceptance-criteria' },
         { id: 'ac-testable', type: 'matches', artifact: 'acceptance-criteria', pattern: 'Given\\b[\\s\\S]{1,600}?When\\b[\\s\\S]{1,600}?Then\\b', flags: 'i' },
-        { id: 'no-open-questions', type: 'not_contains', artifact: 'requirements-spec', value: 'TBD' }
+        { id: 'no-open-questions', type: 'not_contains', artifact: 'requirements-spec', value: 'TBD' },
+        { id: 'plain-language-summary', type: 'contains', artifact: 'requirements-spec', value: '## In Plain Terms' }
       ]
     },
     {
@@ -79,7 +80,8 @@ export const DEFAULT_PIPELINE = {
         // UX designs against this, so the flow has to be settled here first.
         { id: 'user-flow-defined', type: 'contains', artifact: 'architecture-spec', value: '## User Flow', when: { ui: true } },
         { id: 'risks-listed', type: 'contains', artifact: 'impact-analysis', value: '## Risks' },
-        { id: 'cross-project-impact', type: 'contains', artifact: 'impact-analysis', value: '## Cross-Project Impact', when: { monorepo: true } }
+        { id: 'cross-project-impact', type: 'contains', artifact: 'impact-analysis', value: '## Cross-Project Impact', when: { monorepo: true } },
+        { id: 'plain-language-summary', type: 'contains', artifact: 'architecture-spec', value: '## In Plain Terms' }
       ]
     },
     {
@@ -97,7 +99,8 @@ export const DEFAULT_PIPELINE = {
       outputs: ['ux-lofi'],
       exitCriteria: [
         { id: 'lofi-written', type: 'artifact_exists', artifact: 'ux-lofi' },
-        { id: 'flows-listed', type: 'contains', artifact: 'ux-lofi', value: '## User Flows' }
+        { id: 'flows-listed', type: 'contains', artifact: 'ux-lofi', value: '## User Flows' },
+        { id: 'plain-language-summary', type: 'contains', artifact: 'ux-lofi', value: '## In Plain Terms' }
       ]
     },
     {
@@ -114,7 +117,8 @@ export const DEFAULT_PIPELINE = {
       outputs: ['ux-midfi'],
       exitCriteria: [
         { id: 'midfi-written', type: 'artifact_exists', artifact: 'ux-midfi' },
-        { id: 'states-covered', type: 'contains', artifact: 'ux-midfi', value: '## States' }
+        { id: 'states-covered', type: 'contains', artifact: 'ux-midfi', value: '## States' },
+        { id: 'plain-language-summary', type: 'contains', artifact: 'ux-midfi', value: '## In Plain Terms' }
       ]
     },
     {
@@ -131,7 +135,8 @@ export const DEFAULT_PIPELINE = {
       outputs: ['ux-hifi', 'design-tokens'],
       exitCriteria: [
         { id: 'hifi-written', type: 'artifact_exists', artifact: 'ux-hifi' },
-        { id: 'a11y-covered', type: 'contains', artifact: 'ux-hifi', value: '## Accessibility' }
+        { id: 'a11y-covered', type: 'contains', artifact: 'ux-hifi', value: '## Accessibility' },
+        { id: 'plain-language-summary', type: 'contains', artifact: 'ux-hifi', value: '## In Plain Terms' }
       ]
     },
     {
@@ -154,7 +159,8 @@ export const DEFAULT_PIPELINE = {
       exitCriteria: [
         { id: 'plan-written', type: 'artifact_exists', artifact: 'work-plan' },
         { id: 'tasks-enumerated', type: 'min_list_items', artifact: 'work-plan', section: '## Work Packages', min: 1 },
-        { id: 'packages-attributed', type: 'contains', artifact: 'work-plan', value: '## Project Sequencing', when: { monorepo: true } }
+        { id: 'packages-attributed', type: 'contains', artifact: 'work-plan', value: '## Project Sequencing', when: { monorepo: true } },
+        { id: 'plain-language-summary', type: 'contains', artifact: 'work-plan', value: '## In Plain Terms', when: { tracker: true } }
       ]
     },
     {
@@ -241,6 +247,7 @@ export const DEFAULT_PIPELINE = {
         { id: 'applied-listed', type: 'contains', artifact: 'cve-report', value: '## Applied' },
         { id: 'approval-listed', type: 'contains', artifact: 'cve-report', value: '## Needs Approval' },
         { id: 'residual-risk-stated', type: 'contains', artifact: 'cve-report', value: '## Residual Risk' },
+        { id: 'plain-language-summary', type: 'contains', artifact: 'cve-report', value: '## In Plain Terms' },
         // The count the gate condition reads. Stated as a number so no one has to
         // infer "none" from an empty section.
         { id: 'major-count-stated', type: 'matches', artifact: 'cve-report', pattern: '\\*\\*Major upgrades\\*\\*:\\s*\\d+', flags: 'i' }
@@ -266,7 +273,8 @@ export const DEFAULT_PIPELINE = {
       outputs: ['review-report'],
       exitCriteria: [
         { id: 'review-written', type: 'artifact_exists', artifact: 'review-report' },
-        { id: 'verdict-present', type: 'matches', artifact: 'review-report', pattern: '^\\s*-?\\s*\\*\\*Verdict\\*\\*:\\s*(approve|changes_requested|reject)', flags: 'im' }
+        { id: 'verdict-present', type: 'matches', artifact: 'review-report', pattern: '^\\s*-?\\s*\\*\\*Verdict\\*\\*:\\s*(approve|changes_requested|reject)', flags: 'im' },
+        { id: 'plain-language-summary', type: 'contains', artifact: 'review-report', value: '## In Plain Terms' }
       ]
     },
     {
@@ -309,7 +317,8 @@ export const DEFAULT_PIPELINE = {
       outputs: ['release-notes'],
       exitCriteria: [
         { id: 'notes-written', type: 'artifact_exists', artifact: 'release-notes' },
-        { id: 'rollback-stated', type: 'contains', artifact: 'release-notes', value: '## Risk & rollback' }
+        { id: 'rollback-stated', type: 'contains', artifact: 'release-notes', value: '## Risk & rollback' },
+        { id: 'plain-language-summary', type: 'contains', artifact: 'release-notes', value: '## In Plain Terms' }
       ]
     },
     {

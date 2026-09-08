@@ -86,7 +86,7 @@ Two more open conditionally, and only when the condition holds: **planning**, wh
 
 A gate has three outcomes: **approve** (stage closes), **changes_requested** (the same agent runs again with the reviewer's comment attached), **reject** (run blocks; a human decides what happens).
 
-Every gate carries a `plain` field — a plain-language explanation of what the person is actually approving. When you surface a gate to the user, lead with that (in your own words), then the technical detail. The person approving may not be an engineer.
+Every gated artifact contains a `## In Plain Terms` section its author wrote for a non-engineer approver. The gate surfaces it as `plainBriefing` (per artifact), alongside `plain` (what approving the gate means). When you surface a gate to the user, walk them through the briefing in your own words — expanded, not compressed — then the technical detail. The person approving may not be an engineer.
 
 No agent decides a gate on its own judgement. A decision is either a person running the CLI, or the orchestrator relaying one a human just gave it explicitly, in chat, through `hermit_decide_gate` — a tool no role agent has. If you are not the orchestrator and a gate is open, report it and stop; do not try to resolve it yourself.
 

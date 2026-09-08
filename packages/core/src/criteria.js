@@ -1,4 +1,4 @@
-import { readArtifact } from './artifacts.js';
+import { readArtifact, extractSection } from './artifacts.js';
 
 /**
  * Evaluate one exit criterion against the run's artifacts.
@@ -50,20 +50,6 @@ export function evaluateCriterion(paths, runId, criterion) {
     default:
       return fail(`unknown criterion type "${type}"`);
   }
-}
-
-/** Extract the body of a markdown heading section, up to the next heading of the same or higher level. */
-export function extractSection(markdown, heading) {
-  const level = (heading.match(/^#+/) ?? ['#'])[0].length;
-  const lines = markdown.split('\n');
-  const start = lines.findIndex((l) => l.trim() === heading.trim());
-  if (start === -1) return null;
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((l) => {
-    const m = l.match(/^(#+)\s/);
-    return m && m[1].length <= level;
-  });
-  return (end === -1 ? rest : rest.slice(0, end)).join('\n');
 }
 
 /**

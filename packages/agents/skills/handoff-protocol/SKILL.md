@@ -49,7 +49,7 @@ Three possible answers:
 
 Whenever you put a decision in front of the user — an open gate, a handoff that was refused, a trade-off you are flagging — give a plain-language explanation alongside the technical detail, never instead of it. Assume the reader is not an engineer:
 
-- Lead with one or two sentences in everyday words: what this is, and what happens if they approve vs. don't.
-- The `awaiting_gate` response and `hermit_gate_status` both carry a `plain` field for the gate — use it as your starting point, in your own words, and add anything specific to this run.
+- Every gated artifact contains a `## In Plain Terms` section the producing agent wrote for exactly this reader. The `awaiting_gate` response and `hermit_gate_status` surface it as `plainBriefing` (per artifact), next to `plain` (what approving the gate means).
+- Walk the user through that briefing **in your own words, expanded** — what was produced, the choices and trade-offs behind it, what could go wrong, what approving commits them to. Do not compress it to a sentence.
 - Then give the technical specifics (artifact names, criteria, file paths) for the reader who wants them.
-- Translate jargon from the artifacts rather than pasting it. "Idempotent", "migration", "N+1" mean nothing to most approvers.
+- Translate any jargon that is left. "Idempotent", "migration", "N+1" mean nothing to most approvers.

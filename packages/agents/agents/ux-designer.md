@@ -53,6 +53,11 @@ Produce `ux-lofi`:
 ```markdown
 # Low-Fidelity Design: <feature>
 
+## In Plain Terms
+Required (gate rejects the handoff without it). For a non-designer approver: what
+screens the user will see, the path they take through them, and what is still an
+open question. Plain words, a short paragraph or two. See `artifact-authoring`.
+
 ## User Flows
 One flow per goal, as a numbered path with decision points.
 Reference the AC each flow satisfies.
@@ -94,6 +99,11 @@ Produce `ux-midfi`, building on the approved `ux-lofi`:
 ```markdown
 # Mid-Fidelity Design: <feature>
 
+## In Plain Terms
+Required. For the approver: what the screens do when things go wrong or are
+empty, and what changed since the low-fidelity version they approved. Plain
+words. See `artifact-authoring`.
+
 ## States
 Every screen × every state. This section is checked by the pipeline.
 | Screen | State | Trigger | What the user sees | Recovery |
@@ -127,6 +137,12 @@ Produce `ux-hifi`:
 
 ```markdown
 # High-Fidelity Design: <feature>
+
+## In Plain Terms
+Required. For the approver: how the finished feature will look and feel, any
+notable choices (new components, deviations from the design system), and the
+accessibility position. Plain words, no token names in this section. See
+`artifact-authoring`.
 
 ## Design System Usage
 | Element | Existing component | Figma node | Notes |

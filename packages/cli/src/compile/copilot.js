@@ -124,7 +124,7 @@ If a gate is open, **stop and report it**. Do not start the next stage, and do n
 
 - From a terminal: \`hermit gate approve <id>\` (always available).
 - From chat: the orchestrator alone may call \`hermit_decide_gate\`, and only in the same turn a human has explicitly said what to decide and why. VS Code will ask them to confirm before it runs — that confirmation is the decision, not anything you inferred. If nobody has said anything yet, report the gate and wait; role agents never see this tool at all.
-- **Report the gate in plain language.** Each open gate carries a \`plain\` field — a layman's explanation of what approving it means. Lead with that in your own words, then the technical detail; translate jargon out of the artifacts. The approver may not be an engineer.
+- **Report the gate in plain language.** Each open gate carries \`plain\` (what approving it means) and \`plainBriefing\` (the producing agent's own jargon-free account of what it submitted, per artifact — from the \`## In Plain Terms\` section every gated artifact must contain). Walk the user through the briefing in your own words, expanded not shortened, then the technical detail. The approver may not be an engineer.
 - If the human qualifies an approval ("approve, but only 80% sure", "approve, assuming X"), relay it as \`confidence\` (60/80/95) and \`assumptions\` — never a level they did not state. Downstream stages read it to calibrate caution.
 
 ${gates.length} of the ${pipeline.stages.length} stages are human-gated: ${gates.map((s) => `\`${s.id}\``).join(', ')}.

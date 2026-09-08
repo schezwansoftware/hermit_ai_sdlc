@@ -25,6 +25,17 @@ Distinguish these three, always:
 - **Inferred** — a reasonable deduction. Say what it rests on.
 - **Assumed** — you decided because nobody had. Human gates exist mainly to catch these.
 
+## `## In Plain Terms` — required on every gated artifact
+
+If your stage stops for a human approval (requirements, architecture, the UX stages, a tracker-linked plan, security with a major upgrade, review, delivery), the primary artifact must contain a `## In Plain Terms` section, and the pipeline rejects the handoff without it.
+
+Write it for a reader who is **not an engineer** — a product owner, a manager, the person whose name is on the release:
+
+- Explain what this document actually proposes or concludes, and what it means in practice — not a one-line label. For an architecture spec: which parts of the system change, what the notable trade-offs were and why you chose them, what could go wrong, what stays the same. Several short paragraphs or a bulleted walkthrough, not a sentence.
+- No jargon without a plain gloss. "We'll add a database migration (a one-time change to the data's structure, reversible by …)".
+- Say plainly what approving commits them to and what is hard to undo afterwards.
+- It is a summary of the rest of the document — never the only place a fact appears.
+
 ## What not to do
 
 - No `TBD`, `???`, or `[fill in]`. The pipeline rejects some of these outright, and the rest become somebody's incorrect guess two stages later.

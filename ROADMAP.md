@@ -205,12 +205,13 @@ Approve/reject was binary: a 60%-confident "yes, probably" was recorded exactly 
 
 The person approving a gate may not be an engineer. The message was a stage title, artifact names and a CLI command — nothing saying, in everyday words, what they were signing off.
 
-**As built:**
-- Every gated stage (`gate: 'hitl'` or `gateWhen`) carries a `plain` field in `pipeline.js` — one or two sentences: what this is, what approving vs. not approving means
-- `openGate()` copies it onto the gate record; `engine.js` leads the `awaiting_gate` messages and the handoff-refusal message with `In plain terms: …`
-- `hermit_gate_status` exposes it; `hermit gate list` / `next` / `status` print it
-- `handoff-protocol`, `orchestrator` and `pipeline-map` playbooks + both harness compilers require the agent to **lead with the plain explanation in its own words and translate artifact jargon**, then give the technical detail — so it holds whether a person reads the CLI or an agent relays the gate in chat
-- Verified by `npm run test` (smoke asserts every gated stage has a usable `plain` and that the message spells it out)
+**As built — two layers:**
+- **Static** — every gated stage (`gate: 'hitl'` or `gateWhen`) carries a `plain` field in `pipeline.js`: what approving vs. not approving this gate means.
+- **Per submission** — every gated artifact must contain a `## In Plain Terms` section its author writes for a non-engineer approver: what the document proposes, the trade-offs, what could go wrong, what approving commits to. Enforced by an exit criterion (the handoff is refused without it) and required by `artifact-authoring` + each gated agent's playbook.
+- `engine.js` `gatePlainBriefing()` lifts those sections out at gate time; the `awaiting_gate` messages carry both layers, and the handoff-refusal message leads with a plain line.
+- `hermit_gate_status` exposes `plain` + `plainBriefing`; `hermit gate list` / `next` / `status` print them.
+- `handoff-protocol`, `orchestrator`, `pipeline-map` playbooks + both harness compilers require the agent to **walk the user through the briefing in its own words, expanded not shortened**, then the technical detail — so it holds whether a person reads the CLI or an agent relays the gate in chat.
+- Verified by `npm run test` (smoke asserts every gated stage has a usable `plain`, that gated artifacts carry `## In Plain Terms`, and that the gate message spells out the submitted briefing).
 
 
 ---
