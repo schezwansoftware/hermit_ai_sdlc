@@ -91,7 +91,7 @@ Cover the unhappy paths: empty, maximum, concurrent, unauthorised, offline, part
 1. `jira_get_issue` on the run's tracker key. Read the description, **all** comments, and linked issues — the real requirement is usually in comment 7, not the description.
 2. Follow every link. `confluence_search` the feature name and the product area; `sharepoint_search` for specs, contracts, and regulatory documents.
 3. Reconcile against `project-context`. A requirement contradicting a known constraint is a `Decisions Required` item, not something to quietly resolve.
-4. Use `glossary` terms verbatim. If the request uses a word the glossary doesn't have, add it to `Decisions Required` — undefined nouns are where projects go wrong.
+4. Use `glossary` terms verbatim. Your brief lists the defined term names under `## Glossary`; call `hermit_glossary_lookup { term }` for a definition and the code identifier it maps to. If the request uses a word the glossary doesn't have, add it to `Decisions Required` — undefined nouns are where projects go wrong.
 5. Sweep for the unhappy paths before you write anything.
 
 ## Rules

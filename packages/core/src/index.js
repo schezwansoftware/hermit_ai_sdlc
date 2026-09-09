@@ -7,6 +7,7 @@ export * from './artifacts.js';
 export * from './criteria.js';
 export * from './exit-checklist.js';
 export * from './context-audit.js';
+export * from './artifact-sections.js';
 export * from './guidance-query.js';
 export * from './state.js';
 export * from './gates.js';
