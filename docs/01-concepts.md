@@ -72,7 +72,10 @@ hermit_next_task        -> receives its playbook + only the context it is entitl
 hermit_context_audit    -> answers the brief's pre-stage context audit, if it has one
 hermit_submit_artifact  -> writes one declared output
 hermit_request_handoff  -> asks to advance; the context audit, then exit criteria, are checked first
+hermit_get_pack         -> full text of a reference guide the brief only summarised
 ```
+
+The brief keeps itself small: large reference guides (the pipeline map, the handoff protocol) are summarised to a line each under **Reference guides** rather than inlined, and the machine-checked contract — tool scope, the exit-criteria checklist, the required output — renders before the bulky context so a host that truncates an oversized result drops re-fetchable prose, not the contract. An agent pulls a full guide with `hermit_get_pack` (or reads the file directly, on a host that loads `.hermit/skills` and `.hermit/knowledge`).
 
 Some stages (architecture, planning, both implementation stages, low-fidelity UX) open their brief with a short **context audit** — `did you read X, did you check Y` items. The agent answers each through `hermit_context_audit` before requesting handoff; an item it cannot confirm is answered `confirmed: false` with a note, which records the gap without blocking. Catching a missing fact here costs nothing; catching it at the gate costs a full rework cycle.
 

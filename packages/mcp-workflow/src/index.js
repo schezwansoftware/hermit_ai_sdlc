@@ -90,6 +90,10 @@ Normal agent loop:
   3. hermit_submit_artifact  once per declared output
   4. hermit_request_handoff  ask to advance
 
+Large reference guides are summarised in your brief under "Reference guides",
+not inlined. Call hermit_get_pack with the pack id if a summary is not enough
+(or read the file directly on a host that loads .hermit/skills and knowledge).
+
 Call hermit_next_task with no format argument. The default already returns the
 whole brief as one string; format: "json" JSON-encodes the same prose (roughly
 5-10% larger) for fields almost nothing downstream actually parses.
@@ -592,6 +596,29 @@ const tools = [
         a.playbook,
         ...packs.flatMap((p) => ['', `---`, '', `## Pack: ${p.name}`, '', p.body])
       ].join('\n');
+    }
+  },
+  {
+    name: 'hermit_get_pack',
+    title: 'Get a reference guide',
+    description:
+      'Return the full text of one knowledge or skill pack by id (e.g. "pipeline-map", ' +
+      '"handoff-protocol", "artifact-authoring"). Your stage brief lists the larger packs as ' +
+      'one-line pointers under "Reference guides" rather than inlining them; call this if the ' +
+      'summary is not enough. On a host that loads .hermit/skills and .hermit/knowledge as files ' +
+      'you already have these — read the file instead of calling this.',
+    readOnly: true,
+    input: { name: z.string().describe('The pack id, e.g. pipeline-map') },
+    handler: ({ name }) => {
+      const reg = registry();
+      const doc = reg.skillsById[name] ?? reg.knowledgeById[name];
+      if (!doc) {
+        const known = [...Object.keys(reg.skillsById), ...Object.keys(reg.knowledgeById)].sort();
+        return { state: 'not_found', message: `No pack "${name}". Known packs: ${known.join(', ')}` };
+      }
+      return [`# ${doc.name}`, '', doc.description ? `> ${doc.description}` : '', doc.description ? '' : null, doc.body]
+        .filter((l) => l !== null)
+        .join('\n');
     }
   },
   {

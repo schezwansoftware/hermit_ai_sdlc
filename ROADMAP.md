@@ -226,6 +226,19 @@ Agents started work with incomplete context and only found out at the gate, payi
 - `handoff-protocol` + `pipeline-map` packs and the five affected playbooks explain it; both harness compilers list the tool in the working-a-stage loop.
 - Verified by `npm run test` (smoke drives the refusal, the gap path, the reentry-only item and the per-attempt trace grouping).
 
+### 13. Stage brief within the host tool-result limit (HERMIT-21) — **shipped**
+
+`hermit_next_task` briefs on a real run (forms-app, `run-20260909-130845-tfd3`) hit ~51 KB — over Claude Code's ~50 KB inline cap, so the whole brief spilled to a file every stage. The knowledge/skill packs were ~26 KB of that (`pipeline-map` 9.9 KB, `handoff-protocol` 5.6 KB), byte-identical on every brief. P0-0 had capped artifacts but never packs.
+
+**As built:**
+- `context.js`: `PACK_INLINE_MAX` (2 KB) and `PACK_BUDGET` (8 KB combined). A pack over the threshold, or one that would breach the running total, is not inlined — it becomes a one-line pointer under `## Reference guides` (its frontmatter `description` as the summary). Smallest packs inline first so a big reference guide never crowds out a short stage-specific one.
+- New read-only MCP tool `hermit_get_pack { name }` returns one pack's full body — for hosts with no file access to `.hermit/skills` / `.hermit/knowledge` (capable hosts read the file).
+- `renderBundle` reordered: tool scope → exit-criteria checklist → required-output contract come *before* artifacts and reference material, so a truncating host loses re-fetchable prose, never the contract.
+- HERMIT-9's `## The pre-stage context audit` note collapsed to one copy (in `handoff-protocol`; `pipeline-map` points at it).
+- Verified by `npm run test` (a representative brief is under 30 KB, a large pack is referenced not inlined, a small one still inlines, `hermit_get_pack` returns the full body).
+
+**Follow-up:** per-role sectioning of `project-context` and a `hermit_glossary_lookup` tool — the analyst is still handed the full ~14 KB project context and a glossary large enough to be truncated.
+
 ---
 
 ## What remains
