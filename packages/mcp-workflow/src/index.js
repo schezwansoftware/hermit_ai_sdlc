@@ -20,6 +20,8 @@ import {
   contextAuditStatus,
   auditForStage,
   criteriaContext,
+  glossaryLookup,
+  glossaryTerms,
   skipStages,
   runStatus,
   readArtifact,
@@ -295,6 +297,36 @@ const tools = [
         }
         const content = readArtifact(paths, run.id, artifact);
         return content ?? { state: 'missing', message: `"${artifact}" has not been produced yet.` };
+      })
+  },
+  {
+    name: 'hermit_glossary_lookup',
+    title: 'Look up a domain term',
+    description:
+      'Define one domain term from the run glossary — its meaning and the code identifier it maps ' +
+      'to. Your brief lists the term names only under "## Glossary"; this is how you get a ' +
+      'definition. Call with no `term` to dump every defined term. Use the glossary\'s exact word ' +
+      'in your output; a term that is not defined is a gap to raise, not one to invent.',
+    readOnly: true,
+    input: {
+      term: z.string().optional().describe('The term to define. Omit to list every defined term.')
+    },
+    handler: ({ term }) =>
+      withRun((run) => {
+        const content = readArtifact(paths, run.id, 'glossary');
+        if (content === null) {
+          return { state: 'missing', message: 'This run has no glossary. Flag undefined domain nouns rather than guessing.' };
+        }
+        const res = glossaryLookup(content, term);
+        if (term && !res.matches.length) {
+          return {
+            state: 'not_found',
+            term,
+            terms: glossaryTerms(content),
+            message: `"${term}" is not in the glossary. Defined terms: ${glossaryTerms(content).join(', ') || 'none'}.`
+          };
+        }
+        return res;
       })
   },
   {

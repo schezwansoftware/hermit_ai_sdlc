@@ -73,7 +73,10 @@ hermit_context_audit    -> answers the brief's pre-stage context audit, if it ha
 hermit_submit_artifact  -> writes one declared output
 hermit_request_handoff  -> asks to advance; the context audit, then exit criteria, are checked first
 hermit_get_pack         -> full text of a reference guide the brief only summarised
+hermit_glossary_lookup  -> define one domain term (the brief lists names only)
 ```
+
+Onboarding context is scoped too: `project-context` is sliced to the sections a role uses (the analyst gets Purpose, dependencies, ownership, constraints and the confidence list — not the tech stack or runtime topology, which are the architect's), and the glossary is delivered as an index of term names that the agent resolves one at a time with `hermit_glossary_lookup`, rather than a full document that gets truncated.
 
 The brief keeps itself small: large reference guides (the pipeline map, the handoff protocol) are summarised to a line each under **Reference guides** rather than inlined, and the machine-checked contract — tool scope, the exit-criteria checklist, the required output — renders before the bulky context so a host that truncates an oversized result drops re-fetchable prose, not the contract. An agent pulls a full guide with `hermit_get_pack` (or reads the file directly, on a host that loads `.hermit/skills` and `.hermit/knowledge`).
 

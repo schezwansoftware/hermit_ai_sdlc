@@ -6,6 +6,23 @@ work: patch for fixes and maintenance, minor for a backward-compatible feature,
 major for a breaking change to the CLI, the MCP tools, or the gate/artifact/
 pipeline contracts.
 
+## 1.4.0
+
+- Onboarding context scoped per role (HERMIT-22), the other half of the
+  oversized-brief problem from 1.3.0.
+  - `project-context` is sliced to the sections a consuming role uses
+    (`artifact-sections.js`): the analyst gets Purpose / External Dependencies /
+    Ownership / Known Constraints / Confidence & Gaps, the architect gets the
+    build-side sections, and so on. Purpose and Confidence & Gaps go to
+    everyone; an unmapped agent gets the whole document. The slice names what
+    it dropped and points at `hermit_get_artifact project-context`.
+  - The glossary is no longer inlined. The brief carries a `## Glossary` index
+    of term names only; the new read-only `hermit_glossary_lookup { term }`
+    returns a definition and its code identifier (omit `term` to list all).
+  - Onboarding playbook: glossary entries must be one term per line.
+  - Net, with 1.3.0: the forms-app requirements brief drops from ~51 KB to
+    ~16–18 KB.
+
 ## 1.3.0
 
 - Stage brief size (HERMIT-21): `hermit_next_task` briefs were exceeding the

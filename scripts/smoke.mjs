@@ -16,7 +16,8 @@ import {
   writeOnboardingArtifact, onboardingStatus, readArtifact, ONBOARDING_ARTIFACTS,
   SECURITY_ARTIFACTS, reconcile, askGuidance, answerGuidance, openGuidanceQueries, getGuidanceQuery,
   queryTelemetry, runTrace, lastAttemptTrace, HERMIT_VERSION,
-  auditForStage, contextAuditStatus, recordContextAudit, criteriaContext
+  auditForStage, contextAuditStatus, recordContextAudit, criteriaContext,
+  glossaryLookup
 } from '@hermit/core';
 
 // The version `hermit doctor` / `hermit --version` report. Must be semver so a
@@ -185,6 +186,34 @@ for (const id of ONBOARDING_ARTIFACTS) {
 const otherRun = createRun(paths, { title: 'unrelated', intent: 'something else' });
 assert.ok(readArtifact(paths, otherRun.id, 'codebase-map'), 'a second run reads the same onboarding');
 console.log('✓ every run reads the shared onboarding, including runs that predate it');
+
+// HERMIT-22: project-context is sliced to the sections a role uses; the
+// glossary is an index the agent queries, not an inline document.
+{
+  const at = nextTask({ paths, run: loadRun(paths, run.id), registry: reg });
+  assert.equal(at.stage.id, 'requirements');
+  const r = at.rendered;
+  assert.ok(r.includes('## Purpose') && r.includes('## Known Constraints'), 'analyst keeps the sections it uses');
+  assert.ok(!r.includes('## Tech Stack') && !r.includes('## Runtime Topology'), 'analyst does not get the build-side sections');
+  assert.ok(r.includes('Sections scoped out for your role'), 'the slice tells the agent what was dropped and where to get it');
+
+  assert.ok(
+    r.includes('## Glossary') && r.includes('`Cart`') && !r.includes('CartAggregate'),
+    'the glossary renders as a term index, not the full definitions'
+  );
+  const pc = at.bundle.artifacts.find((a) => a.id === 'project-context');
+  assert.ok(pc && !pc.content.includes('## Conventions'), 'the bundled project-context is the sliced copy');
+  assert.deepEqual(at.bundle.glossary.terms, ['Cart'], 'the bundle carries the parsed term list');
+
+  // hermit_glossary_lookup's core: a known term resolves to its definition line,
+  // an unknown one comes back with the full term list.
+  const gloss = readArtifact(paths, run.id, 'glossary');
+  assert.ok(glossaryLookup(gloss, 'cart').matches[0].includes('CartAggregate'), 'lookup returns the definition line');
+  assert.deepEqual(glossaryLookup(gloss).terms, ['Cart'], 'no-arg lookup lists every term');
+  assert.equal(glossaryLookup(gloss, 'nope').matches.length, 0, 'an unknown term has no match');
+
+  console.log('✓ project-context sliced per role; glossary delivered as a queryable index');
+}
 
 // Guidance queries: ask, answer, and the trust boundary in between. Not tied
 // to a gate — an agent can ask mid-stage and keep working while it waits.
@@ -479,6 +508,15 @@ for (let guard = 0; guard < 40; guard++) {
   }
 
   const stage = getStage(DEFAULT_PIPELINE, t.stage.id);
+
+  // HERMIT-22: the architect needs the build-side project-context sections the
+  // analyst was not given.
+  if (t.stage.id === 'architecture' && t.attempt === 1) {
+    assert.ok(
+      t.rendered.includes('## Tech Stack') && t.rendered.includes('## Runtime Topology'),
+      'the architect brief keeps the build-side project-context sections'
+    );
+  }
 
   // P1-2: stages that carry a pre-stage context audit cannot hand off until it
   // is answered. The brief must show the section, the first unanswered handoff

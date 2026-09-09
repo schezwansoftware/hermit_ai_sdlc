@@ -4,6 +4,7 @@ import { effectiveMcpTools } from './servers.js';
 import { scopePathsToProjects } from './projects.js';
 import { renderChecklistSection } from './exit-checklist.js';
 import { scopeKnowledge, scopeSkills, estimateTokens, scopingTelemetry } from './context-scoping.js';
+import { scopeProjectContext, glossaryTerms, renderGlossaryIndex } from './artifact-sections.js';
 
 const DEFAULT_BUDGET = 20_000; // characters of artifact text per bundle (P0-0: reduced from 120k)
 
@@ -56,13 +57,30 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
   const artifacts = [];
   const spend = { used: 0, truncated: false };
 
+  // HERMIT-22: the glossary is a lookup, not an inline document. It is read
+  // here only to build the term index the brief carries; the full text is
+  // fetched per-term through hermit_glossary_lookup.
+  let glossary = null;
+  const wantsGlossary = allowed.includes('glossary');
+
   for (const id of allowed) {
-    const content = readArtifact(paths, run.id, id);
+    if (id === 'glossary') continue;
+    let content = readArtifact(paths, run.id, id);
     if (content === null) continue;
+    // HERMIT-22: hand each role only the project-context sections it uses.
+    if (id === 'project-context') content = scopeProjectContext(content, agent?.id);
     artifacts.push(clip(id, content, budget, spend));
   }
 
-  const missing = allowed.filter((id) => !artifacts.some((a) => a.id === id));
+  if (wantsGlossary) {
+    const raw = readArtifact(paths, run.id, 'glossary');
+    glossary = raw === null ? { missing: true, terms: [] } : { missing: false, terms: glossaryTerms(raw) };
+  }
+
+  const missing = allowed.filter(
+    (id) => id !== 'glossary' && !artifacts.some((a) => a.id === id)
+  );
+  if (wantsGlossary && glossary.missing) missing.push('glossary');
 
   // A stage sent back for changes gets its own last draft returned to it.
   // Without this the agent rebuilds the artifact from the brief alone, and any
@@ -128,6 +146,7 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
     writablePaths: writablePaths,
     skills,
     knowledge,
+    glossary,
     packBudget: { limit: PACK_BUDGET, inlineMax: PACK_INLINE_MAX, used: packSpend.used },
     budget: { limit: budget, used: spend.used, truncated: spend.truncated }
   };
@@ -295,6 +314,13 @@ export function renderBundle(bundle, { playbook, contract, audit = '' }) {
     out.push('_No upstream artifacts. Gather what you need through your allowed MCP tools and the repository._');
   }
   for (const a of bundle.artifacts) renderArtifact(out, `Artifact: ${a.id}`, a);
+
+  // HERMIT-22: the glossary as an index the agent queries, not a document it
+  // scrolls. The full text is one hermit_glossary_lookup call per term.
+  if (bundle.glossary && !bundle.glossary.missing && bundle.glossary.terms.length) {
+    out.push(renderGlossaryIndex(bundle.glossary.terms));
+  }
+
   if (bundle.missingInputs.length) {
     out.push(`> **Missing inputs**: ${bundle.missingInputs.join(', ')} — these were expected but have not been produced yet.`);
     out.push('');

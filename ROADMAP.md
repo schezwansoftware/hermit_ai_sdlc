@@ -237,7 +237,17 @@ Agents started work with incomplete context and only found out at the gate, payi
 - HERMIT-9's `## The pre-stage context audit` note collapsed to one copy (in `handoff-protocol`; `pipeline-map` points at it).
 - Verified by `npm run test` (a representative brief is under 30 KB, a large pack is referenced not inlined, a small one still inlines, `hermit_get_pack` returns the full body).
 
-**Follow-up:** per-role sectioning of `project-context` and a `hermit_glossary_lookup` tool — the analyst is still handed the full ~14 KB project context and a glossary large enough to be truncated.
+---
+
+### 14. Onboarding context scoped per role (HERMIT-22) — **shipped**
+
+The other half of #13: `project-context` (~14 KB) went to every consuming role whole, and the glossary was inlined and truncated because it shared the artifact budget with it.
+
+**As built:**
+- `context.js` slices `project-context` to the sections a role uses before it is clipped, from a central map in `artifact-sections.js` (`PROJECT_CONTEXT_BY_AGENT`). Purpose and Confidence & Gaps always included; an unmapped agent gets the whole document. The slice carries a footer naming the dropped sections and pointing at `hermit_get_artifact project-context`.
+- The glossary is not inlined. The brief carries a `## Glossary` index of term names; the new read-only `hermit_glossary_lookup { term }` returns the definition and code identifier (no `term` lists them all).
+- Onboarding playbook: one glossary term per line, so the index and the lookup both find it.
+- Verified by `npm run test` (analyst brief has Purpose/Known Constraints but not Tech Stack; architect brief keeps Tech Stack; glossary renders as an index; lookup resolves a known term and lists all for an unknown one).
 
 ---
 
