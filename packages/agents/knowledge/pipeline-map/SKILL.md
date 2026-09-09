@@ -92,7 +92,7 @@ No agent decides a gate on its own judgement. A decision is either a person runn
 
 ## The pre-stage context audit
 
-Architecture, planning, both implementation stages and low-fidelity UX open their brief with a short **context audit** — `did you read X, did you check Y` items scoped to that stage. Answer every one with `hermit_context_audit` before requesting handoff; the handoff is refused until you do. An item you cannot confirm is answered `confirmed: false` with a note — that records the gap and lets you design around it or escalate, it does not block you. The answers and flagged gaps are journalled, so over time the pipeline learns which checks catch real gaps.
+Architecture, planning, both implementation stages and low-fidelity UX open their brief with a short **context audit** — answered with `hermit_context_audit` before handoff. See `handoff-protocol` for how it works.
 
 ## Re-entry
 

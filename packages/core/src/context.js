@@ -8,6 +8,20 @@ import { scopeKnowledge, scopeSkills, estimateTokens, scopingTelemetry } from '.
 const DEFAULT_BUDGET = 20_000; // characters of artifact text per bundle (P0-0: reduced from 120k)
 
 /**
+ * HERMIT-21: packs (knowledge + skills) are inlined into the brief only while
+ * they are small and the combined total stays under budget. A pack over
+ * `PACK_INLINE_MAX`, or one that would push the running total past
+ * `PACK_BUDGET`, is delivered as a one-line pointer instead — the agent
+ * expands it with `hermit_get_pack`, or reads the file directly on a host that
+ * loads `.hermit/skills` / `.hermit/knowledge`. Without this the shared
+ * reference packs (`pipeline-map`, `handoff-protocol`) alone were ~15k of every
+ * brief, byte-identical every time, and every feature that appended to one
+ * enlarged every brief for good.
+ */
+const PACK_INLINE_MAX = 2_000;
+const PACK_BUDGET = 8_000;
+
+/**
  * Share of the budget a stage's own prior drafts may take.
  *
  * Upstream inputs are filled first and are never displaced: a revision that
@@ -78,6 +92,20 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
   const scopedSkills = scopeSkills(rawSkills, agent?.id);
   const scopedKnowledge = scopeKnowledge(rawKnowledge, stage);
 
+  // Decide inline vs. pointer for each pack. Smallest first, so a big reference
+  // guide never crowds out a short, stage-specific one; knowledge before skills
+  // only to make the order deterministic.
+  const packSpend = { used: 0 };
+  const markInline = (doc, kind) => {
+    const size = doc.body?.length ?? 0;
+    const inline = size <= PACK_INLINE_MAX && packSpend.used + size <= PACK_BUDGET;
+    if (inline) packSpend.used += size;
+    return { ...doc, kind, inline };
+  };
+  const bySize = (a, b) => (a.body?.length ?? 0) - (b.body?.length ?? 0);
+  const knowledge = [...scopedKnowledge].sort(bySize).map((d) => markInline(d, 'knowledge'));
+  const skills = [...scopedSkills].sort(bySize).map((d) => markInline(d, 'skill'));
+
   const readablePaths = scopePathsToProjects(agent?.context?.reads?.paths ?? [], projects, selected);
   const writablePaths = scopePathsToProjects(agent?.context?.writes?.paths ?? [], projects, selected);
 
@@ -98,8 +126,9 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
     allowedMcpTools: effectiveMcpTools(agent?.context?.reads?.mcp ?? []),
     readablePaths: readablePaths,
     writablePaths: writablePaths,
-    skills: scopedSkills,
-    knowledge: scopedKnowledge,
+    skills,
+    knowledge,
+    packBudget: { limit: PACK_BUDGET, inlineMax: PACK_INLINE_MAX, used: packSpend.used },
     budget: { limit: budget, used: spend.used, truncated: spend.truncated }
   };
 
@@ -114,8 +143,8 @@ export function buildContextBundle({ paths, run, stage, agent, registry, budget 
 
   let afterSize = artifacts.reduce((sum, a) => sum + (a.content?.length ?? 0), 0);
   afterSize += priorOutputs.reduce((sum, a) => sum + (a.content?.length ?? 0), 0);
-  afterSize += scopedKnowledge.reduce((sum, k) => sum + (k.body?.length ?? 0), 0);
-  afterSize += scopedSkills.reduce((sum, s) => sum + (s.body?.length ?? 0), 0);
+  // Only inlined pack bodies land in the brief; referenced packs cost one line.
+  afterSize += [...knowledge, ...skills].reduce((sum, p) => sum + (p.inline ? p.body?.length ?? 0 : 0), 0);
 
   bundle._scopingTelemetry = scopingTelemetry({
     before: beforeSize,
@@ -231,16 +260,34 @@ export function renderBundle(bundle, { playbook, contract, audit = '' }) {
     out.push(audit);
   }
 
-  if (bundle.knowledge.length) {
-    out.push('## Knowledge');
-    for (const k of bundle.knowledge) out.push('', `### ${k.name}`, '', k.body);
-    out.push('');
+  // HERMIT-21: the machine-checked contract — tool scope, the exit-criteria
+  // checklist, the required output — is rendered before the bulky context and
+  // the reference material. If a host truncates or spills an oversized brief,
+  // it drops reference prose the agent can re-fetch, never the contract the
+  // gate will hold it to.
+  out.push('## Tool scope');
+  out.push('');
+  out.push(`- **MCP tools allowed**: ${bundle.allowedMcpTools.length ? bundle.allowedMcpTools.join(', ') : 'none'}`);
+  out.push(`- **Readable paths**: ${bundle.readablePaths.length ? bundle.readablePaths.join(', ') : 'repository default'}`);
+  out.push(`- **Writable paths**: ${bundle.writablePaths.length ? bundle.writablePaths.join(', ') : 'none — you produce artifacts, not files'}`);
+  out.push('');
+
+  // P0-2: Render exit criteria as actionable checklist
+  const checklistMarkdown = renderChecklistSection(contract.exitCriteria ?? []);
+  if (checklistMarkdown) {
+    out.push(checklistMarkdown);
   }
-  if (bundle.skills.length) {
-    out.push('## Skills');
-    for (const s of bundle.skills) out.push('', `### ${s.name}`, '', s.body);
-    out.push('');
+
+  out.push('## Required output');
+  out.push('');
+  for (const o of contract.outputs) {
+    out.push(`- \`${o.id}\` (${o.format}) — ${o.title}${o.required ? ' **[required]**' : ' _[optional]_'}`);
+    for (const s of o.requiredSections) out.push(`  - must contain heading: \`${s}\``);
   }
+  out.push('');
+  out.push('Submit each with `hermit_submit_artifact`, then call `hermit_request_handoff`.');
+  out.push('Exit criteria are checked mechanically; a failing check blocks the handoff and tells you what is missing.');
+  out.push('');
 
   out.push('## Context you are permitted to use');
   out.push('');
@@ -267,27 +314,38 @@ export function renderBundle(bundle, { playbook, contract, audit = '' }) {
     for (const a of bundle.priorOutputs) renderArtifact(out, `Your previous ${a.id}`, a);
   }
 
-  out.push('## Tool scope');
-  out.push('');
-  out.push(`- **MCP tools allowed**: ${bundle.allowedMcpTools.length ? bundle.allowedMcpTools.join(', ') : 'none'}`);
-  out.push(`- **Readable paths**: ${bundle.readablePaths.length ? bundle.readablePaths.join(', ') : 'repository default'}`);
-  out.push(`- **Writable paths**: ${bundle.writablePaths.length ? bundle.writablePaths.join(', ') : 'none — you produce artifacts, not files'}`);
-  out.push('');
+  const inlineKnowledge = (bundle.knowledge ?? []).filter((k) => k.inline);
+  const inlineSkills = (bundle.skills ?? []).filter((s) => s.inline);
+  const referenced = [...(bundle.knowledge ?? []), ...(bundle.skills ?? [])].filter((p) => !p.inline);
 
-  // P0-2: Render exit criteria as actionable checklist
-  const checklistMarkdown = renderChecklistSection(contract.exitCriteria ?? []);
-  if (checklistMarkdown) {
-    out.push(checklistMarkdown);
+  if (inlineKnowledge.length) {
+    out.push('## Knowledge');
+    for (const k of inlineKnowledge) out.push('', `### ${k.name}`, '', k.body);
+    out.push('');
+  }
+  if (inlineSkills.length) {
+    out.push('## Skills');
+    for (const s of inlineSkills) out.push('', `### ${s.name}`, '', s.body);
+    out.push('');
   }
 
-  out.push('## Required output');
-  out.push('');
-  for (const o of contract.outputs) {
-    out.push(`- \`${o.id}\` (${o.format}) — ${o.title}${o.required ? ' **[required]**' : ' _[optional]_'}`);
-    for (const s of o.requiredSections) out.push(`  - must contain heading: \`${s}\``);
+  // HERMIT-21: larger packs are not inlined. The one-line summary is usually
+  // enough; the full text is a loaded skill of the same name, or one
+  // `hermit_get_pack` call away.
+  if (referenced.length) {
+    out.push('## Reference guides');
+    out.push('');
+    out.push(
+      'Kept out of this brief to keep it small. Each is available in full as the loaded skill of the ' +
+        'same name, or via `hermit_get_pack { name: "<id>" }`. The summary below is usually enough — ' +
+        'fetch the full guide only if you need the detail.'
+    );
+    out.push('');
+    for (const p of referenced) {
+      out.push(`- **${p.name}** (\`${p.id}\`) — ${p.description || 'see the full guide'}`);
+    }
+    out.push('');
   }
-  out.push('');
-  out.push('Submit each with `hermit_submit_artifact`, then call `hermit_request_handoff`.');
-  out.push('Exit criteria are checked mechanically; a failing check blocks the handoff and tells you what is missing.');
+
   return out.join('\n');
 }

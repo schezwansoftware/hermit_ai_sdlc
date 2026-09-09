@@ -120,6 +120,46 @@ assert.deepEqual(firstTask.bundle.priorOutputs, [], 'a first attempt carries no 
 assert.ok(!firstTask.rendered.includes('What you submitted last time'), 'a first attempt must not spend context on a revision section');
 console.log('✓ un-onboarded run starts at requirements and reports its missing inputs');
 
+// HERMIT-21: the brief stays well under a host tool-result limit. Large packs
+// are referenced, not inlined; small ones still inline; the machine-checked
+// contract renders before the bulky context so a truncating host keeps it.
+{
+  const r = firstTask.rendered;
+  assert.ok(r.length < 30_000, `brief is ${r.length} chars — expected < 30k`);
+
+  const pmap = reg.knowledgeById['pipeline-map'];
+  assert.ok(pmap.body.length > 2_000, 'pipeline-map is a large pack (precondition for this test)');
+  const pmapEntry = firstTask.bundle.knowledge.find((k) => k.id === 'pipeline-map');
+  assert.equal(pmapEntry?.inline, false, 'pipeline-map must not be inlined');
+  assert.ok(
+    r.includes('## Reference guides') && r.includes('**Pipeline map** (`pipeline-map`)'),
+    'a de-inlined pack must appear as a one-line pointer under Reference guides'
+  );
+  assert.ok(
+    !r.includes('## The traceability chain'),
+    'the body of a referenced pack must not be inlined anywhere in the brief'
+  );
+  assert.ok(
+    firstTask.bundle.packBudget.used <= firstTask.bundle.packBudget.limit,
+    `inlined packs overran their budget: ${firstTask.bundle.packBudget.used} > ${firstTask.bundle.packBudget.limit}`
+  );
+
+  // Ordering: the required-output contract precedes the context dump.
+  assert.ok(
+    r.indexOf('## Required output') < r.indexOf('## Context you are permitted to use'),
+    'the required-output contract must render before the context section'
+  );
+  assert.ok(
+    r.indexOf('## Required output') < r.indexOf('## Reference guides'),
+    'the required-output contract must render before the reference guides'
+  );
+
+  // hermit_get_pack's core lookup: a referenced pack is retrievable in full by id.
+  const fetched = reg.skillsById['handoff-protocol'] ?? reg.knowledgeById['handoff-protocol'];
+  assert.ok(fetched?.body.includes('The three calls'), 'hermit_get_pack must be able to return a pack body by id');
+  console.log(`✓ brief is ${r.length} chars; large packs referenced not inlined; contract renders first`);
+}
+
 // Now onboard the repository. Nothing is scoped to the run.
 const ONBOARDING = {
   'project-context': '# Project Context\n\n## Purpose\nCheckout.\n\n## Tech Stack\n| Layer | Technology |\n|---|---|\n| API | Node |\n\n## Runtime Topology\nOne service.\n\n## External Dependencies\nStripe.\n\n## Conventions\nVitest.\n\n## Ownership\nPayments team.\n\n## Known Constraints\nPCI.\n\n## Confidence & Gaps\nNo ADRs found.\n',

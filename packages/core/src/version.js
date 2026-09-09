@@ -14,4 +14,4 @@
  * `package.json` files are internal and not kept in lockstep — update
  * `CHANGELOG.md` alongside this constant instead.
  */
-export const HERMIT_VERSION = '1.2.0';
+export const HERMIT_VERSION = '1.3.0';

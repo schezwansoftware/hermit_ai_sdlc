@@ -142,6 +142,7 @@ hermit_next_task        receive your brief and scoped context
 hermit_context_audit    answer the brief's "context audit" section, if it has one
 hermit_submit_artifact  once per declared output
 hermit_request_handoff  ask to advance (audit + exit criteria are checked)
+hermit_get_pack         full text of a reference guide the brief only summarised
 \`\`\`
 
 On hosts that do not load \`.github/agents/\` — Copilot in IntelliJ, for example — call \`hermit_get_agent\` to fetch the same playbook over MCP.
