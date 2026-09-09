@@ -102,7 +102,8 @@ export function createRun(paths, {
     stages,
     artifacts: {},
     gates: [],
-    guidanceQueries: []
+    guidanceQueries: [],
+    contextAudits: []
   };
   ensureDir(paths.runDir(id));
   writeJson(paths.runFile(id), run);

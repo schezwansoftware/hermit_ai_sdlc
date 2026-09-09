@@ -214,6 +214,18 @@ The person approving a gate may not be an engineer. The message was a stage titl
 - Verified by `npm run test` (smoke asserts every gated stage has a usable `plain`, that gated artifacts carry `## In Plain Terms`, and that the gate message spells out the submitted briefing).
 
 
+### 12. Pre-stage context audit (HERMIT-9) — **shipped**
+
+Agents started work with incomplete context and only found out at the gate, paying for a missing fact at the most expensive point — a full rework cycle — instead of the cheapest, before work began.
+
+**As built:**
+- `packages/core/src/context-audit.js`: `STAGE_AUDITS` — a short, stage-scoped checklist for `architecture`, `planning`, `implementation_ui`, `implementation_backend` and `ux_lofi`. Items may be conditional (`when`, evaluated against the same run facts as a conditional exit criterion) or reentry-only (`whenAttempt: 'reentry'`).
+- The brief carries the audit under `## Before you start: context audit` (rendered by `renderContextAuditSection`, placed right after the playbook).
+- New MCP tool `hermit_context_audit { agent, findings: [{ id, confirmed, note? }] }`. Every applicable item must be answered; `hermit_request_handoff` is refused (before the exit criteria are even evaluated) until they are. `confirmed: false` with a note is a recorded, surfaced gap — not a blocker.
+- Answers and flagged gaps are journalled as `context.audited` and grouped per stage attempt by `hermit_trace`. `auditFindingsSummary(runs)` aggregates gap rates across runs — the feedback loop on which checks earn their place.
+- `handoff-protocol` + `pipeline-map` packs and the five affected playbooks explain it; both harness compilers list the tool in the working-a-stage loop.
+- Verified by `npm run test` (smoke drives the refusal, the gap path, the reentry-only item and the per-attempt trace grouping).
+
 ---
 
 ## What remains

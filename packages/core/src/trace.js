@@ -23,7 +23,7 @@ export function runTrace(paths, run, pipeline = DEFAULT_PIPELINE) {
     if (!st) return null;
     let a = st.attempts.find((x) => x.attempt === attempt);
     if (!a) {
-      a = { attempt, startedAt: null, context: null, submissions: [], rejections: [], decisions: [], summary: null, traceFile: null, completedAt: null };
+      a = { attempt, startedAt: null, context: null, audit: null, submissions: [], rejections: [], decisions: [], summary: null, traceFile: null, completedAt: null };
       st.attempts.push(a);
     }
     return a;
@@ -50,6 +50,13 @@ export function runTrace(paths, run, pipeline = DEFAULT_PIPELINE) {
             budget: e.budget
           };
         }
+        break;
+      }
+      case 'context.audited': {
+        // P1-2: what the agent confirmed it had read before working, and which
+        // items it flagged as a gap. Keyed to the attempt, like the bundle.
+        const a = attemptFor(e.stage, e.attempt);
+        if (a) a.audit = { at: e.at, items: e.items ?? [], gaps: e.gaps ?? [] };
         break;
       }
       case 'artifact.submitted': {

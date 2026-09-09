@@ -4,6 +4,7 @@ import { GATE_STATUS, findOpenGate, openGate } from './gates.js';
 import { evaluateAll } from './criteria.js';
 import { writeArtifact, listArtifacts, readArtifact, extractSection } from './artifacts.js';
 import { buildContextBundle, outputContract, renderBundle } from './context.js';
+import { renderContextAuditSection, contextAuditStatus } from './context-audit.js';
 import { resolveStageAgent } from './registry.js';
 
 const TERMINAL = [STAGE_STATUS.DONE, STAGE_STATUS.SKIPPED];
@@ -312,6 +313,10 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
 
   const bundle = buildContextBundle({ paths, run, stage, agent, registry, budget });
   const contract = outputContract(stage, criteriaContext(run, pipeline));
+  const auditSection = renderContextAuditSection(stage.id, {
+    context: criteriaContext(run, pipeline),
+    attempt: st.attempts
+  });
   const priorGate = latestGateFeedback(pipeline, run, stage.id);
   const caveats = upstreamApprovalCaveats(pipeline, run, stage.id);
 
@@ -346,7 +351,8 @@ export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, bu
     bundle,
     contract,
     playbook: agent.playbook,
-    rendered: renderBundle(bundle, { playbook: agent.playbook, contract }) +
+    audit: contextAuditStatus(run, stage.id, { context: criteriaContext(run, pipeline), attempt: st.attempts }),
+    rendered: renderBundle(bundle, { playbook: agent.playbook, contract, audit: auditSection }) +
       (priorGate?.comment
         ? `\n\n## Reviewer feedback from the previous attempt\n\n> ${priorGate.comment}\n\n_Address this explicitly before requesting handoff again._\n`
         : '') +
@@ -387,6 +393,30 @@ export function requestHandoff({ paths, run, registry, pipeline = DEFAULT_PIPELI
   reconcile(paths, run, pipeline);
   const stage = getStage(pipeline, run.currentStage);
   if (!stage) return { state: 'complete', message: `Run ${run.id} is already complete.` };
+
+  // P1-2: the pre-stage context audit is checked before the exit criteria —
+  // it is about what the agent read before working, and a missing answer here
+  // is cheaper to surface than a structural gap in the output. Mechanical, like
+  // the criteria: this only refuses an unanswered audit, never judges an answer.
+  const audit = contextAuditStatus(run, stage.id, {
+    context: criteriaContext(run, pipeline),
+    attempt: run.stages[stage.id]?.attempts ?? 1
+  });
+  if (audit.required && !audit.satisfied) {
+    journal(paths, run.id, { event: 'handoff.rejected', stage: stage.id, agent: agentId, auditMissing: audit.missing });
+    return {
+      state: 'blocked',
+      stage: stage.id,
+      accepted: false,
+      auditMissing: audit.missing,
+      message:
+        `Handoff refused — the pre-stage context audit for "${stage.title}" is not complete. ` +
+        `Unanswered: ${audit.missing.join(', ')}.\n\n` +
+        'In plain terms: record what you did and did not check before working, with ' +
+        '`hermit_context_audit`, then request the handoff again. An item you cannot confirm is ' +
+        'answered `confirmed: false` with a note — that is allowed and is not a blocker.'
+    };
+  }
 
   const check = evaluateAll(paths, run.id, stage.exitCriteria, criteriaContext(run, pipeline));
   if (!check.ok) {

@@ -12,6 +12,7 @@ You never call another agent. You call the workflow server, and the orchestrator
 
 ```
 hermit_next_task                      receive your brief + scoped context
+hermit_context_audit    <findings>    answer the brief's context audit, if it has one
 hermit_submit_artifact  <id> <body>   write one declared output
 hermit_request_handoff                ask to advance
 ```
@@ -21,6 +22,12 @@ hermit_request_handoff                ask to advance
 `hermit_next_task` returns your playbook, your context bundle, and your output contract. That bundle is **all** the context you are entitled to. If something you want is listed under `withheld`, it is out of your role's scope — do not ask another agent or the human to paste it in. If something under `missingInputs` is genuinely required, that is an upstream gap: say so and request handoff, which will fail with a precise reason. That failure is the signal, and it is more useful than you improvising.
 
 Call it with no `format` argument. The default already returns everything above as one rendered string. `format: "json"` JSON-encodes the same prose — every newline and quote in your playbook, in artifact content, in a reviewer's comment gets escaped — for a modest amount of extra size (roughly 5-10% in practice) and nothing you can't already read in the default. If your responses are still too large on the default, that is the brief's actual content, not the format — say so rather than switching formats to chase a fix that will not land. Only reach for `json` if you are about to parse one specific field programmatically, never by default.
+
+## The pre-stage context audit
+
+Some stages — architecture, planning, both implementation stages, low-fidelity UX — open your brief with a **## Before you start: context audit**: a short list of `did you read X, did you check Y` items. A missing fact caught here costs nothing; the same fact caught at the gate costs a full rework cycle.
+
+Answer every item with `hermit_context_audit { agent, findings: [{ id, confirmed, note? }] }` **before** `hermit_request_handoff` — the handoff is refused with the unanswered ids until you do. `confirmed: true` means you have genuinely done the thing. `confirmed: false` with a short `note` naming the gap is allowed and expected when something is genuinely missing — it is recorded and surfaced, not a blocker, and it is far better than a silent guess. Re-call the tool to replace your answers if you go back and do the reading.
 
 ## Submitting
 
@@ -32,7 +39,7 @@ Three possible answers:
 
 | Answer | Meaning | What you do |
 |---|---|---|
-| `blocked` | An exit criterion failed | Read the named failures, fix them, submit again |
+| `blocked` | The context audit is unanswered, or an exit criterion failed | Read the named items/failures, fix them (or answer the audit), submit again |
 | `awaiting_gate` | Criteria passed; a human must approve | **Stop.** Report the gate id, the CLI command, and the plain-terms explanation (below) |
 | `advanced` | Criteria passed; run moved on | You are done. Do not start the next stage |
 

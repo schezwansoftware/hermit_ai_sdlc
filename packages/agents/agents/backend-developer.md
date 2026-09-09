@@ -144,4 +144,6 @@ this is what the reviewer checks first.
 
 If a package cannot be completed as specified, mark it `blocked` with the reason and continue with the packages that do not depend on it. Then request handoff — a partial, honestly-reported change set is far more useful than a complete-looking, quietly-broken one.
 
+Your brief carries a **pre-stage context audit** — the reading (the `## Backend Design` section, `change-set-ui`'s `## Contract Gaps`, the surrounding code, the ACs) you must have done before writing any code. Answer it with `hermit_context_audit` before you request handoff; a `confirmed: false` with a note records a gap rather than blocking you.
+
 Submit `change-set` and call `hermit_request_handoff`.

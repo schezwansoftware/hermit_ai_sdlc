@@ -15,7 +15,8 @@ import {
   nextTask, submitArtifact, requestHandoff, runStatus, decideGate, openGates, getStage, saveRun,
   writeOnboardingArtifact, onboardingStatus, readArtifact, ONBOARDING_ARTIFACTS,
   SECURITY_ARTIFACTS, reconcile, askGuidance, answerGuidance, openGuidanceQueries, getGuidanceQuery,
-  queryTelemetry, runTrace, lastAttemptTrace, HERMIT_VERSION
+  queryTelemetry, runTrace, lastAttemptTrace, HERMIT_VERSION,
+  auditForStage, contextAuditStatus, recordContextAudit, criteriaContext
 } from '@hermit/core';
 
 // The version `hermit doctor` / `hermit --version` report. Must be semver so a
@@ -239,7 +240,8 @@ const BODIES = {
 };
 
 let gatesHit = 0, stagesDone = 0, changesRequestedTested = false, chatDecisionTested = false,
-  reviewChangesRequestedTested = false, provisionalApprovalTested = false, caveatSurfaced = false;
+  reviewChangesRequestedTested = false, provisionalApprovalTested = false, caveatSurfaced = false,
+  auditBlockTested = false, auditGapRecorded = false, auditReentryItemSeen = false;
 
 for (let guard = 0; guard < 40; guard++) {
   let cur = loadRun(paths, run.id);
@@ -437,6 +439,63 @@ for (let guard = 0; guard < 40; guard++) {
   }
 
   const stage = getStage(DEFAULT_PIPELINE, t.stage.id);
+
+  // P1-2: stages that carry a pre-stage context audit cannot hand off until it
+  // is answered. The brief must show the section, the first unanswered handoff
+  // must be refused, and an item answered `confirmed: false` is a recorded gap,
+  // not a blocker.
+  const auditItems = auditForStage(t.stage.id, {
+    context: criteriaContext(cur, DEFAULT_PIPELINE), attempt: t.attempt
+  });
+  if (auditItems.length) {
+    assert.ok(
+      t.rendered.includes('## Before you start: context audit') &&
+        auditItems.every((i) => t.rendered.includes(`\`${i.id}\``)),
+      `${t.stage.id} brief must carry every applicable context-audit item`
+    );
+    if (t.stage.id === 'architecture' && t.attempt > 1) {
+      assert.ok(
+        auditItems.some((i) => i.id === 'reviewer-feedback'),
+        'a re-entered stage must gain the reentry-only audit item'
+      );
+      auditReentryItemSeen = true;
+    }
+    for (const out of stage.outputs ?? []) {
+      submitArtifact({ paths, run: cur, registry: reg, artifactId: out, content: BODIES[out], agentId: stage.agent });
+    }
+    if (!auditBlockTested) {
+      auditBlockTested = true;
+      const refused = requestHandoff({ paths, run: loadRun(paths, run.id), registry: reg, agentId: stage.agent });
+      assert.equal(refused.state, 'blocked', 'an unanswered context audit must refuse the handoff');
+      assert.deepEqual(
+        refused.auditMissing.sort(), auditItems.map((i) => i.id).sort(),
+        'the refusal must name every unanswered audit item'
+      );
+      cur = loadRun(paths, run.id);
+    }
+    // Answer every item; on the first audited stage flag one as a gap.
+    const gapHere = t.stage.id === 'architecture' && t.attempt === 1 ? 'read-index' : null;
+    const findings = auditItems.map((i) => ({
+      id: i.id,
+      confirmed: i.id !== gapHere,
+      note: i.id === gapHere ? 'index section was thin — noted for follow-up' : undefined
+    }));
+    const rec = recordContextAudit(paths, cur, {
+      stageId: t.stage.id, attempt: t.attempt, agentId: stage.agent, findings,
+      context: criteriaContext(cur, DEFAULT_PIPELINE)
+    });
+    saveRun(paths, cur);
+    if (rec.gaps.length) auditGapRecorded = true;
+    assert.equal(
+      contextAuditStatus(loadRun(paths, run.id), t.stage.id, {
+        context: criteriaContext(cur, DEFAULT_PIPELINE), attempt: t.attempt
+      }).satisfied,
+      true,
+      'a fully answered audit must report satisfied'
+    );
+    cur = loadRun(paths, run.id);
+  }
+
   for (const out of stage.outputs ?? []) {
     if (!BODIES[out]) throw new Error(`smoke test has no body for artifact "${out}"`);
     submitArtifact({ paths, run: cur, registry: reg, artifactId: out, content: BODIES[out], agentId: stage.agent });
@@ -456,6 +515,11 @@ assert.equal(gatesHit, 9, `expected 9 gate encounters (7 gates + 1 architecture 
 assert.ok(provisionalApprovalTested, 'the provisional-approval path must have been exercised');
 assert.ok(caveatSurfaced, 'a downstream brief must have surfaced the provisional upstream approval');
 console.log('✓ provisional gate approval: confidence + assumptions recorded and carried into downstream briefs');
+
+assert.ok(auditBlockTested, 'the context-audit refusal path must have been exercised');
+assert.ok(auditGapRecorded, 'an audit item answered `confirmed: false` must have been recorded as a gap');
+assert.ok(auditReentryItemSeen, 'the reentry-only audit item must have appeared on the architecture re-entry');
+console.log('✓ pre-stage context audit: brief carries it, unanswered handoff refused, gaps recorded');
 
 console.log(`✓ ${stagesDone} stage completions, ${gatesHit} gate encounters`);
 console.log(`✓ run completed: ${final.artifacts.length} artifacts`);
@@ -490,6 +554,20 @@ console.log(`✓ run completed: ${final.artifacts.length} artifacts`);
     'the traceFile pointer must be recorded on the attempt that actually completed'
   );
   assert.equal(arch.attempts[1].summary, 'did architecture', 'summary and traceFile are recorded independently');
+
+  // P1-2: the audit the agent recorded is grouped onto the attempt it belongs
+  // to — attempt 1 carried a flagged gap, attempt 2 did not.
+  assert.ok(arch.attempts[0].audit, 'architecture attempt 1 must carry its context audit in the trace');
+  assert.deepEqual(
+    arch.attempts[0].audit.gaps, ['read-index'],
+    'the traced audit must record exactly the one gap the agent flagged'
+  );
+  assert.deepEqual(arch.attempts[1].audit?.gaps ?? [], [], 'attempt 2 recorded no gaps');
+  assert.ok(
+    arch.attempts[1].audit.items.includes('reviewer-feedback'),
+    'the re-entry attempt audit must include the reentry-only item'
+  );
+  console.log('✓ context audit grouped per attempt in the thinking trace, with the flagged gap');
 
   const last = lastAttemptTrace(paths, loadRun(paths, run.id), 'architecture');
   assert.equal(last.attempt, arch.attempts[1].attempt, 'lastAttemptTrace must return the same attempt as the trace\'s last one');

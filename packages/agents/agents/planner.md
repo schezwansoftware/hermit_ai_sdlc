@@ -105,4 +105,6 @@ Never create tracker items for work outside the approved architecture. If you be
 - Do not re-litigate the architecture. If the design cannot be decomposed, that is a signal to send it back through the gate, not to redesign it here.
 - Sequence for reviewability: a package that touches thirty files is a package that gets rubber-stamped.
 
+Your brief carries a **pre-stage context audit** — what you must have read before planning. Answer it with `hermit_context_audit` before you request handoff; a `confirmed: false` with a note records a gap rather than blocking you.
+
 Submit `work-plan` and call `hermit_request_handoff`. This stage advances automatically once criteria pass — the design was already ratified.
