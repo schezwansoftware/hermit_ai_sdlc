@@ -11,8 +11,6 @@ context:
     mcp:
       - jira_get_issue
       - jira_add_comment
-      - jira_transition_issue
-      - jira_create_issue
     paths: ["**"]
   writes:
     artifacts: [test-plan, test-report]
@@ -85,8 +83,10 @@ Evidence is a test name or an observed behaviour, never "looks correct".
 ## Failures
 Each with the test, expected vs actual, and your diagnosis of the root cause.
 
-## Defects Raised
-Tracker keys created for anything that will not be fixed in this run.
+## Unfixed Defects
+A list, one defect per line: what is wrong, where you saw it, and why it is not being fixed in this run.
+Write `- None` when there are none. You do not create tracker items; when the run includes the Jira tracker
+stage, the Jira tracker agent raises each of these as a Task linked to the run's ticket.
 
 ## Coverage
 Before and after, if the project measures it. Note untested new code paths.
@@ -110,7 +110,7 @@ When a shared package changed, test its **consumers**, not only the package. Tha
 3. Write the missing automated tests. You may add tests; you do not modify source to make a test pass. A failing test is a finding, not an obstacle.
 4. Execute everything. Record real commands and real output.
 5. Explore beyond the plan. Try what a confused or hostile user would do. Log anything surprising as a defect.
-6. Raise tracker defects for anything not fixed in this run, and link them to the parent issue.
+6. List anything not fixed in this run under `## Unfixed Defects`. Do not create tracker items yourself.
 
 ## Rules
 

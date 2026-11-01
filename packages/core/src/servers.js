@@ -26,6 +26,7 @@ export const SERVERS = {
       'hermit_journal',
       'hermit_trace',
       'hermit_start_run',
+      'hermit_ack_tracker_sync',
       'hermit_onboarding_task',
       'hermit_submit_onboarding',
       'hermit_security_task',
@@ -41,7 +42,7 @@ export const SERVERS = {
     title: 'Jira',
     package: '@hermit/mcp-jira',
     bin: 'hermit-mcp-jira',
-    description: 'Issues, search, comments, links, transitions and subtask creation.',
+    description: 'Issues, search, comments, links, transitions, and Task and Subtask creation (no Stories, Bugs or Epics).',
     env: [
       { name: 'JIRA_BASE_URL', required: true, secret: false, hint: 'https://your-org.atlassian.net' },
       { name: 'JIRA_EMAIL', required: true, secret: false, hint: 'Atlassian account email' },
@@ -54,6 +55,7 @@ export const SERVERS = {
       'jira_list_issue_links',
       'jira_create_issue',
       'jira_create_subtasks',
+      'jira_link_issues',
       'jira_update_issue',
       'jira_transition_issue',
       'jira_add_comment'

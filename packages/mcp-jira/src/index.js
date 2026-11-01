@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { z } from 'zod';
 import { main, runServer, createClient, basicAuth, requireEnv, loadConfig, setting } from '@hermit/mcp-shared';
+import { assertCreatable, adf, buildIssueFields } from './issue-rules.js';
 
 const config = loadConfig();
 const baseUrl = setting(config, 'JIRA_BASE_URL', 'jira.baseUrl');
@@ -22,16 +23,11 @@ function assertWrites() {
   if (!writesEnabled()) throw new Error('Jira writes are disabled (set jira.writes: true in .hermit/config.json to enable).');
 }
 
-/** Atlassian Document Format: the v3 API refuses plain strings for rich-text fields. */
-function adf(text) {
-  return {
-    type: 'doc',
-    version: 1,
-    content: String(text)
-      .split(/\n{2,}/)
-      .map((para) => ({ type: 'paragraph', content: [{ type: 'text', text: para }] }))
-  };
-}
+/** Custom field ids for Acceptance Criteria / Definition of Done, if the project has them. */
+const fieldIds = () => ({
+  acceptanceCriteria: setting(config, 'JIRA_FIELD_ACCEPTANCE_CRITERIA', 'jira.fields.acceptanceCriteria') || null,
+  definitionOfDone: setting(config, 'JIRA_FIELD_DEFINITION_OF_DONE', 'jira.fields.definitionOfDone') || null
+});
 
 /** Flatten ADF back to text so an agent reads prose, not a node tree. */
 function fromAdf(node) {
@@ -121,45 +117,77 @@ const tools = [
   {
     name: 'jira_create_issue',
     title: 'Create issue',
-    description: 'Create an issue. Only for work inside the approved plan — never to record scope you invented.',
+    description:
+      'Create a Task or a Subtask. No other type is allowed: Stories, Bugs and Epics are never created here. ' +
+      'A Subtask needs `parent`; a Task must not have one (attach it with jira_link_issues). ' +
+      'Only for work inside the approved plan, never to record scope you invented.',
     input: {
       project: z.string().describe('Project key'),
       summary: z.string(),
       description: z.string().optional(),
-      issueType: z.string().optional().describe('Default: Task'),
-      parent: z.string().optional().describe('Parent key, for subtasks'),
+      acceptanceCriteria: z.string().optional().describe('Given/When/Then list; goes in its own field when the project has one'),
+      definitionOfDone: z.string().optional().describe('Checklist of what makes the item done'),
+      issueType: z.enum(['Task', 'Subtask']).optional().describe('Default: Task'),
+      parent: z.string().optional().describe('Parent key. Subtasks only.'),
       labels: z.array(z.string()).optional()
     },
-    handler: async ({ project, summary, description, issueType = 'Task', parent, labels }) => {
+    handler: async ({ project, summary, description, acceptanceCriteria, definitionOfDone, issueType = 'Task', parent, labels }) => {
+      // The type rules run first, before writes or credentials are consulted.
+      const type = assertCreatable({ issueType, parent });
       assertWrites();
-      const fields = { project: { key: project }, summary, issuetype: { name: issueType } };
-      if (description) fields.description = adf(description);
-      if (parent) fields.parent = { key: parent };
-      if (labels?.length) fields.labels = labels;
+      const fields = buildIssueFields(
+        { project, summary, issueType: type, parent, labels, description, acceptanceCriteria, definitionOfDone },
+        fieldIds()
+      );
       const res = await api().post('/issue', { body: { fields } });
-      return { key: res.key, url: `${baseUrl?.replace(/\/+$/, '')}/browse/${res.key}` };
+      return { key: res.key, type, url: `${baseUrl?.replace(/\/+$/, '')}/browse/${res.key}` };
     }
   },
   {
     name: 'jira_create_subtasks',
     title: 'Create subtasks',
-    description: 'Create several subtasks under a parent in one call. Used by the planner to publish work packages.',
+    description: 'Create several Subtasks under one parent in one call. A Subtask cannot itself be split further.',
     input: {
-      parent: z.string().describe('Parent issue key'),
+      parent: z.string().describe('Parent issue key (a Task)'),
       project: z.string(),
-      subtasks: z.array(z.object({ summary: z.string(), description: z.string().optional() })),
-      issueType: z.string().optional().describe('Default: Subtask')
+      subtasks: z.array(
+        z.object({
+          summary: z.string(),
+          description: z.string().optional(),
+          acceptanceCriteria: z.string().optional(),
+          definitionOfDone: z.string().optional()
+        })
+      )
     },
-    handler: async ({ parent, project, subtasks, issueType = 'Subtask' }) => {
+    handler: async ({ parent, project, subtasks }) => {
+      const type = assertCreatable({ issueType: 'Subtask', parent });
       assertWrites();
       const created = [];
       for (const st of subtasks) {
-        const fields = { project: { key: project }, parent: { key: parent }, summary: st.summary, issuetype: { name: issueType } };
-        if (st.description) fields.description = adf(st.description);
+        const fields = buildIssueFields({ project, summary: st.summary, issueType: type, parent, ...st }, fieldIds());
         const res = await api().post('/issue', { body: { fields } });
         created.push({ key: res.key, summary: st.summary });
       }
       return { parent, created };
+    }
+  },
+  {
+    name: 'jira_link_issues',
+    title: 'Link issues',
+    description:
+      'Link two existing issues, for example a Task to the Story it was split from. ' +
+      'Link type defaults to jira.linkType in .hermit/config.json, then "Relates".',
+    input: {
+      key: z.string().describe('Issue the link starts from, e.g. the new Task'),
+      linkedKey: z.string().describe('Issue it links to, e.g. the source Story'),
+      linkType: z.string().optional().describe('Jira link type name, e.g. Relates, Blocks')
+    },
+    handler: async ({ key, linkedKey, linkType }) => {
+      if (key === linkedKey) throw new Error('An issue cannot be linked to itself.');
+      assertWrites();
+      const type = linkType ?? setting(config, 'JIRA_LINK_TYPE', 'jira.linkType', 'Relates');
+      await api().post('/issueLink', { body: { type: { name: type }, outwardIssue: { key }, inwardIssue: { key: linkedKey } } });
+      return { key, linkedKey, linkType: type };
     }
   },
   {

@@ -16,16 +16,20 @@
  * the repository (`hermit onboard`) and every run reads the result. A run
  * whose repository was never onboarded proceeds and names the missing inputs.
  *
- * Two stages are off unless a run asks for them. `tracker` writes epics and
- * stories into a real tracker and `security` changes dependency manifests —
- * both are outward-facing enough that running them by default would be a
- * surprise, and neither is needed by most changes.
+ * Two stages are off unless a run asks for them. `tracker` writes Tasks and
+ * Subtasks into a real Jira project and moves the ticket through its workflow,
+ * and `security` changes dependency manifests — both are outward-facing enough
+ * that running them by default would be a surprise. The tracker stage is also
+ * switched on by a run that carries a Jira key (`autoWhen: 'jira-key'`), since
+ * handing Hermit a ticket is asking for it to be kept up to date.
  *
  * gate: 'hitl'      -> a human must approve via the CLI before the run advances
  * gate: 'auto'      -> advances as soon as exit criteria pass
  * gateWhen: <cond>  -> an 'auto' stage that becomes 'hitl' when the condition
  *                      holds for this run (see GATE_CONDITIONS in engine.js)
  * optIn: true       -> skipped unless the run explicitly turns it on
+ * autoWhen: 'jira-key' -> an optIn stage that a run with a Jira key turns on
+ *                      by itself; an explicit skip still wins
  * skippable: false  -> a prompt or flag may never stand this stage down
  * plain: <text>     -> HERMIT-18: a layman's explanation of what a person is
  *                      actually signing off at this gate and what happens next,
@@ -164,25 +168,38 @@ export const DEFAULT_PIPELINE = {
       ]
     },
     {
-      // Off unless the run asks for it. Most work already has a ticket; the runs
-      // that need this are the ones that started as an idea rather than an issue.
+      // Off unless the run asks for it, or carries a Jira key. The Jira tracker
+      // is the only agent that creates or transitions Jira items, and it creates
+      // Tasks and Subtasks only. The Jira server refuses every other type, so
+      // this is not a rule an agent can talk its way past.
       //
       // It executes rather than proposes — by the time it runs, a human has
       // approved the work plan it derives from (see `gateWhen` on planning), so
-      // the epic and stories it opens carry a decision that was already made.
+      // the items it opens carry a decision that was already made. It also owns
+      // the status sync that runs between stages (see tracker-sync.js).
       id: 'tracker',
-      title: 'Tracker items',
-      agent: 'story-writer',
+      title: 'Jira tracker',
+      agent: 'jira-tracker',
       gate: 'auto',
       optional: true,
       optIn: true,
+      autoWhen: 'jira-key',
       inputs: ['work-plan', 'acceptance-criteria', 'requirements-spec', 'architecture-spec', 'impact-analysis'],
       outputs: ['story-map'],
       exitCriteria: [
         { id: 'map-written', type: 'artifact_exists', artifact: 'story-map' },
         { id: 'hierarchy-listed', type: 'min_list_items', artifact: 'story-map', section: '## Hierarchy', min: 1 },
         { id: 'created-recorded', type: 'contains', artifact: 'story-map', value: '## Created' },
-        { id: 'coverage-stated', type: 'contains', artifact: 'story-map', value: '## Work Package Coverage' }
+        { id: 'coverage-stated', type: 'contains', artifact: 'story-map', value: '## Work Package Coverage' },
+        // The server already refuses these; this catches a map that claims otherwise.
+        {
+          id: 'only-tasks-and-subtasks',
+          type: 'not_matches',
+          artifact: 'story-map',
+          pattern: '^\\|\\s*(?:[A-Z][A-Z0-9]*-\\d+|PENDING)\\s*\\|\\s*(?:epic|story|bug|feature)\\s*\\|',
+          flags: 'im',
+          message: 'story-map lists a Story, Bug, Epic or Feature as created; only Tasks and Subtasks may be created'
+        }
       ]
     },
     {
@@ -351,7 +368,7 @@ export const ARTIFACTS = {
   'ux-hifi': { format: 'md', title: 'High-fidelity design spec', producer: 'ux-designer' },
   'design-tokens': { format: 'json', title: 'Design tokens', producer: 'ux-designer' },
   'work-plan': { format: 'md', title: 'Work plan', producer: 'planner' },
-  'story-map': { format: 'md', title: 'Tracker item map', producer: 'story-writer' },
+  'story-map': { format: 'md', title: 'Jira item map', producer: 'jira-tracker' },
   'change-set-ui': { format: 'md', title: 'Change set summary — interface', producer: 'implementer' },
   'change-set': { format: 'md', title: 'Change set summary — services', producer: 'implementer' },
   'cve-report': { format: 'md', title: 'Vulnerability report', producer: 'security' },

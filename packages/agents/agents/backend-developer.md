@@ -16,7 +16,6 @@ context:
     mcp:
       - jira_get_issue
       - jira_update_issue
-      - jira_transition_issue
       - jira_add_comment
     paths: ["**"]
   writes:

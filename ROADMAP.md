@@ -163,16 +163,9 @@ Two jobs on two different clocks, which is why it exists in two places.
 - The count is read from the report rather than inferred from an empty section, and a report that omits it fails its exit criteria rather than being assumed safe
 - **Write scope is manifests and lockfiles only.** A security pass structurally cannot become a refactor the reviewer was not expecting
 
-### 8. Epic / story writer agent — **shipped**
+### 8. Epic / story writer agent — **shipped, then narrowed by item 10**
 
-**As built:**
-- `packages/agents/agents/story-writer.md`, with the `story-mapping` skill pack
-- Opt-in `tracker` stage after planning; produces `story-map` recording the hierarchy it opened, with real tracker keys
-- **Turning it on makes `planning` a human gate** (`gateWhen: 'tracker'`). Creating an epic notifies a team, so it follows a human decision — the same shape as the pull request following delivery sign-off. The stage then *executes* an approved plan rather than proposing and asking forgiveness
-- Searches before it creates. A duplicate epic is cleanup someone does by hand, and it is the most common damage this stage could do
-- Acceptance criteria are copied verbatim, never paraphrased — QA executes the ratified originals
-- Work the approved plan does not contain goes under `## Gaps`, not into the tracker
-- Writes no files: no `writes.paths`, so it gets no edit or execute tools in either harness
+The first version created epics, stories and tasks. See item 10 for what it does now.
 
 ### 9. Auto-decide stages mid-run (HERMIT-17) — **shipped**
 
@@ -272,3 +265,16 @@ Angular, which both sit under the generic `node` stack and are indistinguishable
 without dependency inspection, Flutter has its own detectable stack (`pubspec.yaml`).
 A future pass could route a `stack: [flutter]` project to a Flutter-only skill set
 immediately, without waiting for the harder React/Angular/backend-framework split.
+
+### 10. Jira tracker agent (HERMIT-23) — **shipped**
+
+**As built:**
+- New `jira-tracker` agent owns the `tracker` stage and is the only agent that creates or moves Jira items. It creates **Tasks and Subtasks only**: a Story becomes linked Tasks, a Task becomes Subtasks, a Subtask is never split. Each gets a description, acceptance criteria and a definition of done
+- **The restriction is in the server, not the prompt.** `jira_create_issue` accepts only `Task` or `Subtask`; a Subtask needs a parent and a Task must not have one. New `jira_link_issues` attaches Tasks to their Story. Acceptance criteria and definition of done go to custom fields when `jira.fields` names them, otherwise into named sections of the description
+- `story-writer` is narrowed to refining an existing story and owns no stage. `planner`, `qa`, the implementers and the orchestrator lose their Jira create and transition tools; QA lists unfixed defects under `## Unfixed Defects` and the tracker raises them as Tasks
+- **The tracker stage turns on by itself for a run with a Jira key** (`autoWhen: 'jira-key'`) or when the intent names the Jira tracker. A skip still wins, and `hermit start` prints why it is on
+- **Status sync after every step** (`tracker-sync.js`). The engine maps the stage the run is in to a ticket status and, when it changed, `hermit_next_task` returns `tracker_sync` before anything else. The Jira workflow is not global, so the target is a path: the engine ships the route from every possible current status and the agent makes the moves in order. A refused move is acknowledged and the run carries on
+- Every ticket takes one flow: To Do, Assessment, In Progress, Testing, Code Review, UAT, Done. **UAT is approved by the QA agent plus a person**: a ticket leaves it for Done only when `test-report` says `pass` and the delivery sign-off is approved
+- Status names and the workflow are configurable: `jira.statusMap`, `jira.workflow`, `jira.fields`, `jira.linkType`
+
+**Needs doing in Jira, not here:** publish the new workflow, add the `Code Review` to `UAT` transition, and add Acceptance Criteria and Definition of Done fields if you want them as fields rather than description sections.

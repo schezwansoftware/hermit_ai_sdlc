@@ -38,7 +38,7 @@ for (const d of ['agents', 'skills', 'knowledge']) {
 const reg = loadRegistry(paths);
 console.log(`workspace: ${root}`);
 console.log(`agents: ${reg.agents.length}  skills: ${reg.skills.length}  knowledge: ${reg.knowledge.length}`);
-assert.equal(reg.agents.length, 14, 'expected 14 agents');
+assert.equal(reg.agents.length, 15, 'expected 15 agents');
 assert.equal(DEFAULT_PIPELINE.stages.length, 15, 'expected 15 stages');
 
 // Every stage must resolve to a real agent, and every input must be produced
@@ -108,7 +108,7 @@ let ob = onboardingStatus(paths);
 assert.equal(ob.complete, false);
 assert.deepEqual(ob.missing, ONBOARDING_ARTIFACTS);
 
-const run = createRun(paths, { title: 'Cart survives session expiry', intent: 'Preserve the cart when a session expires during checkout', jiraKey: 'PROJ-412', flags: [] });
+const run = createRun(paths, { title: 'Cart survives session expiry', intent: 'Preserve the cart when a session expires during checkout', jiraKey: 'PROJ-412', flags: [], skip: ['tracker'] });
 console.log(`✓ run created: ${run.id}`);
 
 // A run whose repository was never onboarded still starts, and says what is missing.

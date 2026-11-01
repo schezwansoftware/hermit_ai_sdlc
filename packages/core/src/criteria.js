@@ -37,6 +37,14 @@ export function evaluateCriterion(paths, runId, criterion) {
       return re.test(content) ? pass() : fail(`artifact "${criterion.artifact}" must match /${criterion.pattern}/${criterion.flags ?? ''}`);
     }
 
+    case 'not_matches': {
+      if (content === null) return fail(`artifact "${criterion.artifact}" missing`);
+      const re = new RegExp(criterion.pattern, criterion.flags ?? '');
+      return re.test(content)
+        ? fail(criterion.message ?? `artifact "${criterion.artifact}" must not match /${criterion.pattern}/${criterion.flags ?? ''}`)
+        : pass();
+    }
+
     case 'min_list_items': {
       if (content === null) return fail(`artifact "${criterion.artifact}" missing`);
       const section = extractSection(content, criterion.section);

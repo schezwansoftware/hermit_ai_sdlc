@@ -37,7 +37,7 @@ const DEFAULT_CONFIG = {
   version: 1,
   servers: ['hermit', 'jira', 'confluence', 'sharepoint', 'figma', 'scm'],
   scm: { provider: null, writes: true },
-  jira: { writes: true },
+  jira: { writes: true, fields: { acceptanceCriteria: null, definitionOfDone: null } },
   confluence: { writes: false },
   sharepoint: { writes: false },
   figma: { bridgePort: 8473 },
@@ -403,7 +403,7 @@ export function cmdStart(intent, opts) {
   // Show the words that changed the shape of the run, not just the result. A
   // stage that stood down because of a phrase the user did not mean to write is
   // only findable if the phrase is printed back.
-  const acted = directives.filter((d) => d.action !== 'refused');
+  const acted = (run.directives ?? directives).filter((d) => d.action !== 'refused');
   if (acted.length) {
     log('');
     log('  Scope:');
@@ -517,6 +517,14 @@ export function cmdNext(opts) {
   if (task.state === 'awaiting_gate') {
     log('');
     log(c.yellow('⏸ A human gate is open.'), 'No agent may proceed.');
+    log('');
+    log(task.message);
+    log('');
+    return task;
+  }
+  if (task.state === 'tracker_sync') {
+    log('');
+    log(c.yellow('↻ A Jira status sync is owed.'), 'Hand it to the jira-tracker agent.');
     log('');
     log(task.message);
     log('');

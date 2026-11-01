@@ -6,6 +6,31 @@ work: patch for fixes and maintenance, minor for a backward-compatible feature,
 major for a breaking change to the CLI, the MCP tools, or the gate/artifact/
 pipeline contracts.
 
+## 1.5.0
+
+- Jira tracker agent (HERMIT-23).
+  - New `jira-tracker` agent owns the `tracker` stage and is the only agent
+    that creates or moves Jira items. It creates Tasks and Subtasks only. The
+    Jira server refuses any other issue type, requires a parent on a Subtask and
+    forbids one on a Task. New `jira_link_issues` tool; `jira_create_issue` and
+    `jira_create_subtasks` take acceptance criteria and a definition of done.
+  - `story-writer` now only refines an existing story and owns no stage.
+    `planner`, `qa`, the implementers and the orchestrator no longer hold Jira
+    create or transition tools. QA lists unfixed defects under
+    `## Unfixed Defects`; the tracker raises them as Tasks.
+  - The tracker stage turns on for a run with a Jira key, or when the intent
+    names the Jira tracker (`update jira`, `keep jira updated`). A skip wins.
+  - Status sync: after each step the engine computes the ticket's target status
+    and `hermit_next_task` returns `tracker_sync` until the new
+    `hermit_ack_tracker_sync` clears it. The workflow is treated as a graph, so a
+    target is a path. UAT leaves for Done only when QA passed and the delivery
+    sign-off was approved. Configure with `jira.statusMap`, `jira.workflow`,
+    `jira.fields`, `jira.linkType`.
+  - New `not_matches` exit criterion. The `story-map` exit criteria now fail if
+    it lists an Epic, Story, Bug or Feature as created.
+  - New checks: `npm run check:jira`, `npm run check:tracker`.
+  - Needs doing in Jira: publish the new workflow and add `Code Review` to `UAT`.
+
 ## 1.4.0
 
 - Onboarding context scoped per role (HERMIT-22), the other half of the

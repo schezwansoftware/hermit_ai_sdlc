@@ -33,7 +33,8 @@ Three practical reasons, in order of how much they hurt:
 | `architect` | `architecture` | `architecture-spec`, `adr`, `impact-analysis` |
 | `ux-designer` | `ux_lofi`, `ux_midfi`, `ux_hifi` | `ux-lofi`, `ux-midfi`, `ux-hifi`, `design-tokens` |
 | `planner` | `planning` | `work-plan` |
-| `story-writer` | `tracker` ○ | `story-map` |
+| `jira-tracker` | `tracker` ○ + the Jira status sync | `story-map` |
+| `story-writer` | *outside the pipeline* | refines an existing story |
 | `implementer` | `implementation_ui`, `implementation_backend` | `change-set-ui`, `change-set` |
 | `ui-developer` | `implementation_ui` *(react · angular)* | `change-set-ui` |
 | `backend-developer` | `implementation_backend` *(python · go · jvm · node)* | `change-set` |
@@ -61,7 +62,25 @@ Two properties make this safe to expose to prose:
 1. **The intent is never re-read.** No agent rephrases its way into or out of a stage. The one exception is mechanical, not linguistic: once requirements or architecture is done, the orchestrator may call `hermit_skip_stages` to stand *optional, not-yet-started* stages down when the run has settled that they produce nothing (no interface → no UX stages). It narrows only, never widens; it needs a reason; and it is an intimation to the user, not a gate.
 2. **Four stages are locked.** Requirements, architecture, review and delivery are refused with a reason, at every layer — the parser, `createRun`, and `hermit_skip_stages` too. Those four hold the gates the design rests on, and a gate a sentence can dissolve is not a gate.
 
-Two stages invert the default: `tracker` and `security` are off until asked for, because both act outward — one writes to a real tracker, the other changes dependency manifests.
+Two stages invert the default: `tracker` and `security` are off until asked for, because both act outward — one writes to a real tracker, the other changes dependency manifests. The tracker also comes on by itself when a run carries a Jira key (`--jira PROJ-1`): handing Hermit a ticket is asking for it to be kept up to date. A skip in the intent or `--skip tracker` still wins, and `hermit start` prints which one it was.
+
+### The Jira tracker
+
+`jira-tracker` is the only agent that creates or moves Jira items, and it creates **Tasks and Subtasks only**. The Jira server refuses every other type, so this does not depend on an agent following instructions. Given a Story it creates linked Tasks; given a Task it creates Subtasks; a Subtask is never split. Every item gets a description, acceptance criteria and a definition of done. `story-writer` only refines a story that already exists.
+
+Between stages the engine works out which Jira status the ticket should be in and, when that changed, hands the orchestrator a `tracker_sync` task. The Jira workflow is not global, so a target is a path through it, and the agent makes the moves one at a time. Every ticket takes the same flow:
+
+| Run is at | Ticket should be |
+|---|---|
+| requirements to planning | To Do |
+| tracker | Assessment (the only way from To Do to In Progress) |
+| implementation, security, review | In Progress |
+| qa, documentation | Testing |
+| delivery stage | Code Review |
+| delivery gate open (sign-off) | UAT |
+| run complete | Done |
+
+A failed QA or a gate asking for changes sends the ticket back to In Progress. **A ticket leaves UAT for Done only when QA reported `pass` and a person approved the delivery sign-off.** A move Jira refuses is recorded and the run carries on. Status names and the workflow come from `jira.statusMap` and `jira.workflow` in `.hermit/config.json`.
 
 ## Handoff, concretely
 

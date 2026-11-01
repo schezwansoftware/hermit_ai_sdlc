@@ -110,8 +110,10 @@ export const DIRECTIVE_TARGETS = [
     id: 'tracker',
     stages: ['tracker'],
     mode: 'default-off',
-    label: 'Tracker items (epic, stories, tasks)',
+    label: 'Jira tracker (tasks, subtasks and status updates)',
     aliases: [
+      'jira tracker', 'the jira tracker', 'jira tracker agent', 'tracker agent',
+      'update jira', 'keep jira updated', 'track in jira', 'jira updates', 'jira status',
       'epic', 'epics', 'create an epic', 'create epics',
       'stories', 'user stories', 'create stories', 'jira stories',
       'story breakdown', 'break into stories', 'stories and tasks',

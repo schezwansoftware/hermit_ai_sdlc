@@ -147,6 +147,26 @@ const overridden = createRun(paths, {
 assert.equal(overridden.stages.security.status, STAGE_STATUS.SKIPPED, '--skip must beat an intent that opted in');
 console.log('  ✓ an explicit skip overrides an opt-in read from the prose');
 
+// A run handed a Jira ticket is asking for it to be tracked: the tracker stage
+// comes on by itself, says why, and is still beaten by an explicit skip.
+const keyed = createRun(paths, { title: 'Keyed', intent: 'add a field to the profile page', jiraKey: 'PROJ-7', registry: reg });
+assert.equal(keyed.stages.tracker.status, STAGE_STATUS.PENDING, 'a Jira key turns the tracker stage on');
+const inferred = keyed.directives.find((d) => d.inferred);
+assert.ok(inferred && inferred.action === 'include' && inferred.phrase.includes('PROJ-7'), 'the inferred scope decision is recorded');
+const keyedSkip = createRun(paths, {
+  title: 'Keyed skip', intent: 'add a field, skip the jira tracker', jiraKey: 'PROJ-8', registry: reg,
+  ...(() => { const d = parseDirectives('add a field, skip the jira tracker'); return { skip: d.skip, include: d.include, directives: d.decisions }; })()
+});
+assert.equal(keyedSkip.stages.tracker.status, STAGE_STATUS.SKIPPED, 'saying skip the jira tracker beats the key');
+assert.equal(keyedSkip.directives.some((d) => d.inferred), false, 'no inferred decision when it was skipped');
+const keyedFlag = createRun(paths, { title: 'Keyed flag', intent: 'x', jiraKey: 'PROJ-9', skip: ['tracker'], registry: reg });
+assert.equal(keyedFlag.stages.tracker.status, STAGE_STATUS.SKIPPED, '--skip tracker beats the key');
+assert.equal(createRun(paths, { title: 'No key', intent: 'x', registry: reg }).stages.tracker.status, STAGE_STATUS.SKIPPED, 'no key, no tracker');
+for (const phrase of ['update jira as you go', 'keep jira updated', 'use the jira tracker agent']) {
+  assert.ok(parseDirectives(phrase).include.includes('tracker'), `"${phrase}" asks for the tracker`);
+}
+console.log('  ✓ a Jira key or a mention turns the tracker stage on, and a skip still wins');
+
 // ------------------------------------------------------ conditional gates
 
 assert.equal(

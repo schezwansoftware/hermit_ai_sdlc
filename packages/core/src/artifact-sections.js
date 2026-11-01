@@ -36,7 +36,7 @@ export const PROJECT_CONTEXT_BY_AGENT = {
   'ux-designer': ['External Dependencies', 'Known Constraints'],
   documenter: ['External Dependencies', 'Conventions', 'Ownership'],
   security: ['Tech Stack', 'Runtime Topology', 'External Dependencies', 'Known Constraints'],
-  'story-writer': ['Ownership', 'Known Constraints']
+  'jira-tracker': ['Ownership', 'Known Constraints']
 };
 
 const norm = (s) => String(s).replace(/[^a-z0-9]/gi, '').toLowerCase();
