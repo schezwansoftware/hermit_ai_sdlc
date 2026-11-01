@@ -163,9 +163,9 @@ Two jobs on two different clocks, which is why it exists in two places.
 - The count is read from the report rather than inferred from an empty section, and a report that omits it fails its exit criteria rather than being assumed safe
 - **Write scope is manifests and lockfiles only.** A security pass structurally cannot become a refactor the reviewer was not expecting
 
-### 8. Epic / story writer agent — **shipped, then narrowed by item 10**
+### 8. Epic / story writer agent — **shipped, then narrowed by item 15**
 
-The first version created epics, stories and tasks. See item 10 for what it does now.
+The first version created epics, stories and tasks. See item 15 for what it does now.
 
 ### 9. Auto-decide stages mid-run (HERMIT-17) — **shipped**
 
@@ -266,7 +266,7 @@ without dependency inspection, Flutter has its own detectable stack (`pubspec.ya
 A future pass could route a `stack: [flutter]` project to a Flutter-only skill set
 immediately, without waiting for the harder React/Angular/backend-framework split.
 
-### 10. Jira tracker agent (HERMIT-23) — **shipped**
+### 15. Jira tracker agent (HERMIT-23) — **shipped**
 
 **As built:**
 - New `jira-tracker` agent owns the `tracker` stage and is the only agent that creates or moves Jira items. It creates **Tasks and Subtasks only**: a Story becomes linked Tasks, a Task becomes Subtasks, a Subtask is never split. Each gets a description, acceptance criteria and a definition of done
