@@ -51,19 +51,36 @@ export function createRun(paths, {
   const skipStages = new Set(skip);
   const includeStages = new Set(include);
 
+  const autoOn = (stage) => stage.autoWhen === 'jira-key' && Boolean(jiraKey);
+
   const isSkipped = (stage) => {
     // A stage with a human gate is not something a sentence gets to remove. The
     // parser already refuses these, and this is the second lock: even a
     // hand-written flags array or a direct MCP call cannot drop one.
     if (stage.skippable === false) return false;
     // Off by default. An explicit skip still wins, so `--skip security` is safe
-    // to pass even when the prose already turned it on.
-    if (stage.optIn) return !includeStages.has(stage.id) || skipStages.has(stage.id);
+    // to pass even when the prose already turned it on. A stage may also be
+    // switched on by the run itself: `autoWhen: 'jira-key'` means a run that
+    // was handed a Jira ticket is asking for it to be tracked.
+    if (stage.optIn) return (!includeStages.has(stage.id) && !autoOn(stage)) || skipStages.has(stage.id);
     if (skipStages.has(stage.id)) return true;
     if (stage.skipWhen === 'no-ui') return flags.includes('no-ui') || !uiInScope;
     if (stage.skipWhen === 'ui-only') return uiOnly;
     return Boolean(stage.skipWhen && flags.includes(stage.skipWhen));
   };
+
+  // Say so when a stage came on because of the Jira key rather than anything
+  // the user wrote, so `hermit start` can print it back like any other scope
+  // decision instead of the stage appearing unexplained.
+  const runDirectives = [...directives];
+  for (const stage of pipeline.stages) {
+    if (stage.optIn && autoOn(stage) && !includeStages.has(stage.id) && !skipStages.has(stage.id)) {
+      runDirectives.push({
+        target: stage.id, label: stage.title, stages: [stage.id], action: 'include',
+        phrase: `--jira ${jiraKey}`, inferred: true
+      });
+    }
+  }
 
   const stages = {};
   for (const stage of pipeline.stages) {
@@ -90,7 +107,7 @@ export function createRun(paths, {
     flags,
     // Kept verbatim so `hermit status` and the journal can show which words in
     // the intent stood a stage down, rather than only that it is not running.
-    directives,
+    directives: runDirectives,
     pipelineId: pipeline.id,
     pipelineVersion: pipeline.version,
     monorepo: projects.length > 1,
@@ -111,7 +128,7 @@ export function createRun(paths, {
   journal(paths, id, {
     event: 'run.created', title, intent, jiraKey, flags,
     projects: run.selectedProjects, uiInScope, stacks: run.tech.stacks,
-    directives,
+    directives: runDirectives,
     skipped: Object.entries(stages).filter(([, v]) => v.status === STAGE_STATUS.SKIPPED).map(([k]) => k)
   });
   return run;

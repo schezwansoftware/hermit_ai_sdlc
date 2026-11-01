@@ -15,7 +15,6 @@ context:
     mcp:
       - jira_get_issue
       - jira_update_issue
-      - jira_transition_issue
       - jira_add_comment
       - figma_get_file_nodes
       - figma_export_images

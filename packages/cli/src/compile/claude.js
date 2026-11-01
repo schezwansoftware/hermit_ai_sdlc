@@ -191,6 +191,7 @@ hermit_context_audit    answer the brief's "context audit" section, if it has on
 hermit_submit_artifact  once per declared output
 hermit_request_handoff  ask to advance (audit + exit criteria are checked mechanically)
 hermit_get_pack         full text of a reference guide the brief only summarised
+hermit_glossary_lookup  define one domain term (brief lists names only)
 \`\`\`
 
 A refused handoff names the exact criterion that failed. Fix that specific thing; do not resubmit the same content.

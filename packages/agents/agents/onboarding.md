@@ -122,6 +122,12 @@ Files with the highest churn or the widest fan-in. These are where changes hurt.
 
 Domain terms with definitions, and — critically — the **code identifier** each maps to. Requirements will use the business word; implementation needs the class name.
 
+One term per line, each starting `- **Term**` — agents look terms up individually through `hermit_glossary_lookup`, and the brief lists the term names from these lines, so a term that spills across bullets or hides in a paragraph will not be found. Example:
+
+```markdown
+- **Reconciliation** → `LedgerReconciler` — the nightly job that matches unpaired ledger entries.
+```
+
 ## Method
 
 ## In a monorepo

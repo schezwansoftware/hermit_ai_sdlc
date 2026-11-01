@@ -6,6 +6,7 @@ import { writeArtifact, listArtifacts, readArtifact, extractSection } from './ar
 import { buildContextBundle, outputContract, renderBundle } from './context.js';
 import { renderContextAuditSection, contextAuditStatus } from './context-audit.js';
 import { resolveStageAgent } from './registry.js';
+import { syncTracker, pendingSync, renderSync } from './tracker-sync.js';
 
 const TERMINAL = [STAGE_STATUS.DONE, STAGE_STATUS.SKIPPED];
 
@@ -255,6 +256,7 @@ export function reconcile(paths, run, pipeline = DEFAULT_PIPELINE) {
     journal(paths, run.id, { event: 'run.completed' });
     changed = true;
   }
+  if (syncTracker(paths, run)) changed = true;
   if (changed) saveRun(paths, run);
   return run;
 }
@@ -265,6 +267,15 @@ export function reconcile(paths, run, pipeline = DEFAULT_PIPELINE) {
  */
 export function nextTask({ paths, run, registry, pipeline = DEFAULT_PIPELINE, budget }) {
   reconcile(paths, run, pipeline);
+
+  // A Jira status sync is bookkeeping between stages, not stage work, and it can
+  // be owed while a gate is open (the ticket moves to UAT as the sign-off gate
+  // opens), so it is handed out first. It is cleared by hermit_ack_tracker_sync,
+  // which accepts a refused move, so it can never hold a run up for good.
+  const owed = pendingSync(run);
+  if (owed) {
+    return { state: 'tracker_sync', agent: 'jira-tracker', sync: owed, message: renderSync(run, owed) };
+  }
 
   const openGateNow = findOpenGate(run);
   if (openGateNow) {
@@ -611,6 +622,7 @@ export function runStatus({ paths, run, pipeline = DEFAULT_PIPELINE }) {
       status: run.stages[s.id]?.status ?? 'pending',
       attempts: run.stages[s.id]?.attempts ?? 0
     })),
-    directives: run.directives ?? []
+    directives: run.directives ?? [],
+    trackerSync: run.trackerSync ?? null
   };
 }

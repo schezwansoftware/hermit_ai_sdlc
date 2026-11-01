@@ -14,12 +14,15 @@ import {
   saveRun,
   readJournal,
   nextTask,
+  ackTrackerSync,
   submitArtifact,
   requestHandoff,
   recordContextAudit,
   contextAuditStatus,
   auditForStage,
   criteriaContext,
+  glossaryLookup,
+  glossaryTerms,
   skipStages,
   runStatus,
   readArtifact,
@@ -150,6 +153,9 @@ const tools = [
     handler: ({ agent, format = 'markdown' }) =>
       withRun((run, reg) => {
         const task = nextTask({ paths, run, registry: reg });
+        if (task.state === 'tracker_sync') {
+          return { state: 'tracker_sync', agent: task.agent, sync: task.sync, message: task.message };
+        }
         if (task.state !== 'task') return { state: task.state, message: task.message, gate: task.gate ?? null };
 
         if (agent && agent !== task.agent.id) {
@@ -295,6 +301,36 @@ const tools = [
         }
         const content = readArtifact(paths, run.id, artifact);
         return content ?? { state: 'missing', message: `"${artifact}" has not been produced yet.` };
+      })
+  },
+  {
+    name: 'hermit_glossary_lookup',
+    title: 'Look up a domain term',
+    description:
+      'Define one domain term from the run glossary — its meaning and the code identifier it maps ' +
+      'to. Your brief lists the term names only under "## Glossary"; this is how you get a ' +
+      'definition. Call with no `term` to dump every defined term. Use the glossary\'s exact word ' +
+      'in your output; a term that is not defined is a gap to raise, not one to invent.',
+    readOnly: true,
+    input: {
+      term: z.string().optional().describe('The term to define. Omit to list every defined term.')
+    },
+    handler: ({ term }) =>
+      withRun((run) => {
+        const content = readArtifact(paths, run.id, 'glossary');
+        if (content === null) {
+          return { state: 'missing', message: 'This run has no glossary. Flag undefined domain nouns rather than guessing.' };
+        }
+        const res = glossaryLookup(content, term);
+        if (term && !res.matches.length) {
+          return {
+            state: 'not_found',
+            term,
+            terms: glossaryTerms(content),
+            message: `"${term}" is not in the glossary. Defined terms: ${glossaryTerms(content).join(', ') || 'none'}.`
+          };
+        }
+        return res;
       })
   },
   {
@@ -701,14 +737,40 @@ const tools = [
         firstAgent: agent,
         skippedStages: skipped,
         refusedSkips: refused,
+        trackerOn: run.stages.tracker?.status !== 'skipped',
         message:
           `Run ${run.id} created. Call hermit_next_task to receive the ${agent} brief.` +
+          (run.directives?.some((d) => d.inferred && d.action === 'include')
+            ? `\n\nThe Jira tracker is on for this run because it carries the Jira key ${jiraKey}. ` +
+              'Say so when you report the scope.'
+            : '') +
           (refused.length
             ? `\n\nRefused: ${refused.map((r) => `${r.target} (${r.reason})`).join('; ')}. ` +
               'These stages carry human gates and cannot be skipped. Tell the user plainly rather than trying another route.'
             : '')
       };
     }
+  },
+  {
+    name: 'hermit_ack_tracker_sync',
+    title: 'Acknowledge Jira status sync',
+    description:
+      'Jira tracker agent only. Report the outcome of a pending Jira status sync: `reached` is the status the ' +
+      'ticket is actually in now, which may differ from the target if a move was refused. A refused move is a ' +
+      'report, not a failure; the run continues. Pass `defectKeys` when you raised QA\'s unfixed defects as Tasks.',
+    input: {
+      agent: z.string().describe('Your agent id; must be jira-tracker'),
+      reached: z.string().describe('The status the ticket is in now'),
+      note: z.string().optional().describe('One line: the path taken, or why a move was refused'),
+      defectKeys: z.array(z.string()).optional().describe('Keys of Tasks created for unfixed defects')
+    },
+    handler: ({ agent, reached, note, defectKeys = [] }) =>
+      withRun((run) => {
+        if (agent !== 'jira-tracker') {
+          return { state: 'denied', message: 'Only the jira-tracker agent may acknowledge a Jira status sync.' };
+        }
+        return ackTrackerSync({ paths, run, reached, note, defectKeys });
+      })
   },
   {
     name: 'hermit_onboarding_task',

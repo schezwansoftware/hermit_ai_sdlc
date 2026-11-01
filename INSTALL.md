@@ -259,6 +259,26 @@ export CONFLUENCE_EMAIL="you@your-org.com"
 export CONFLUENCE_API_TOKEN="..."
 ```
 
+#### Jira tracker settings
+
+A run started with `--jira PROJ-1` turns the Jira tracker on: it creates Tasks and Subtasks and keeps the ticket's status in step with the run. All of these are optional, in `.hermit/config.json`:
+
+```json
+{
+  "jira": {
+    "writes": true,
+    "linkType": "Relates",
+    "fields": { "acceptanceCriteria": "customfield_10100", "definitionOfDone": "customfield_10101" },
+    "statusMap": { "testing": "Testing", "codeReview": "Code Review", "uat": "UAT" },
+    "workflow": [{ "name": "start development", "from": "Assessment", "to": "In Progress" }]
+  }
+}
+```
+
+- `fields`: custom field ids for acceptance criteria and definition of done. Without them they are written as sections of the description.
+- `statusMap`: your names for `todo`, `assessment`, `inProgress`, `testing`, `codeReview`, `uat`, `done`.
+- `workflow`: the transitions your project allows, as `{ name, from, to }`. The default is To Do, Assessment, In Progress, Testing, Code Review, UAT, Done, and a failure goes back to In Progress. The workflow must include a `Code Review` to `UAT` transition.
+
 ### SharePoint
 
 Needs an Entra app registration with `Sites.Read.All` granted by admin consent — and `Sites.ReadWrite.All` only if you enable uploads.

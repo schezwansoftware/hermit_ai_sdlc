@@ -72,6 +72,18 @@ for (const [name, rel] of SERVERS) {
       if (w.state !== 'wrong_agent') { console.log('\n    ✗ stage ownership not enforced'); failures++; }
       else process.stdout.write('  · ownership enforced');
     }
+    if (name === 'jira') {
+      const names = tools.map((t) => t.name);
+      if (!names.includes('jira_link_issues')) { console.log('\n    ✗ jira_link_issues is not exposed'); failures++; }
+
+      // The type guard answers before credentials are consulted, so this needs no Jira site.
+      const story = await client.callTool({ name: 'jira_create_issue', arguments: { project: 'P', summary: 'x', issueType: 'Task', parent: 'P-1' } });
+      const storyText = story.content[0].text;
+      if (!story.isError || !storyText.includes('jira_link_issues')) { console.log(`\n    ✗ a Task with a parent was not refused: ${storyText.slice(0, 120)}`); failures++; }
+      const noParent = await client.callTool({ name: 'jira_create_issue', arguments: { project: 'P', summary: 'x', issueType: 'Subtask' } });
+      if (!noParent.isError || !noParent.content[0].text.includes('needs a parent')) { console.log('\n    ✗ a Subtask without a parent was not refused'); failures++; }
+      else process.stdout.write('  · create rules enforced');
+    }
     console.log('');
     await client.close();
   } catch (err) {

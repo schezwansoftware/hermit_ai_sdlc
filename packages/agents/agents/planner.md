@@ -10,9 +10,6 @@ context:
     artifacts: [architecture-spec, acceptance-criteria, impact-analysis, ux-hifi, work-plan]
     mcp:
       - jira_get_issue
-      - jira_create_issue
-      - jira_create_subtasks
-      - jira_update_issue
       - jira_add_comment
       - jira_search
     paths: ["**"]
@@ -87,16 +84,12 @@ Every work package names its project. A package spanning two projects is two pac
 4. Size for a single focused change. If a package needs more than one, split it.
 5. Fold `impact-analysis` risks into the packages that carry them, including migration and rollback work as their own packages. Rollback is not free and should not be invisible.
 
-## Tracker synchronisation
+## Tracker
 
-When the run has a tracker key and the project enables writes:
+You do not write to Jira. Work packages live in `work-plan`; when the run includes the Jira tracker stage, the Jira tracker agent turns the approved plan into Tasks or Subtasks. Write each package so that it can be picked up from the plan alone: a clear title, `Satisfies`, `Done when` and `Files`.
 
-- `jira_create_subtasks` for each package under the parent issue.
-- Put `Done when` into the subtask's acceptance criteria field, not the description body.
-- Link dependencies with the tracker's relationship types so the board reflects the real order.
-- Record the Hermit run id on the parent issue via `jira_add_comment`, so the board points back at the artifacts.
-
-Never create tracker items for work outside the approved architecture. If you believe something is missing, it belongs under `## Deferred` with a note, and goes back through the analyst.
+- Record the dependencies between packages in `work-plan`, so the tracker can link them.
+- Never add work that is outside the approved architecture to make the board look complete. If you believe something is missing, it belongs under `## Deferred` with a note, and goes back through the analyst.
 
 ## Rules
 

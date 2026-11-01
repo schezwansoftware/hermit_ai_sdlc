@@ -19,6 +19,8 @@
   "scripts": {
     "test": "node scripts/smoke.mjs",
     "check:mcp": "node scripts/mcp-check.mjs",
+    "check:jira": "node scripts/jira-rules-check.mjs",
+    "check:tracker": "node scripts/tracker-check.mjs",
     "check:gates": "node scripts/gate-check.mjs",
     "demo": "node scripts/demo.mjs",
     "check:monorepo": "node scripts/monorepo-check.mjs",

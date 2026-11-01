@@ -24,7 +24,7 @@ That is the whole setup. → [Install guide](INSTALL.md) · [Concepts](docs/01-c
  4  ux_midfi                ux-designer   ⏸  every screen × every state  ├ skipped when
  5  ux_hifi                 ux-designer   ⏸  visual contract, tokens     ┘ nothing has a UI
  6  planning                planner       ·  work packages                      (⏸ if 7 runs)
- 7  tracker                 story-writer  ·  epic, stories, tasks               ○ ask for it
+ 7  tracker                 jira-tracker  ·  tasks, subtasks, Jira status       ○ on with a Jira key
  8  implementation_ui       implementer*  ·  the interface and its tests        (skipped: no UI)
  9  implementation_backend  implementer*  ·  the services and their tests       (skipped: UI only)
 10  security                security      ·  CVE scan, safe upgrades applied    ○ ask for it
@@ -184,7 +184,8 @@ Hermit also emits `.github/instructions/project-<id>.instructions.md` scoped wit
 | `orchestrator` | routing · delivery · pull_request | release notes, the pull request |
 | `onboarding` | *outside the pipeline* | project context, codebase map, glossary |
 | `security` | security *(and the repo baseline)* | dependency map, CVE report, safe upgrades |
-| `story-writer` | tracker | epic, stories, tasks, story map |
+| `jira-tracker` | tracker *(and the Jira status sync between stages)* | tasks, subtasks, story map, ticket status |
+| `story-writer` | *outside the pipeline* | refines an existing story; creates nothing |
 | `analyst` | requirements | requirements spec, acceptance criteria |
 | `ux-designer` | ux_lofi · ux_midfi · ux_hifi | wireframes, design spec, design tokens |
 | `architect` | architecture | user flow, architecture spec, ADRs, impact analysis |

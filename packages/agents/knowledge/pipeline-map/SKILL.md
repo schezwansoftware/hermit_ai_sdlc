@@ -18,7 +18,7 @@ Shared reference for every agent. You own one box; this shows you the rest so yo
 | 4 | `ux_midfi` | ux-designer | **human** | `ux-lofi`, `requirements-spec`, `architecture-spec` | `ux-midfi` |
 | 5 | `ux_hifi` | ux-designer | **human** | `ux-midfi`, `requirements-spec`, `architecture-spec` | `ux-hifi`, `design-tokens` |
 | 6 | `planning` | planner | auto² | `architecture-spec`, `acceptance-criteria`, `impact-analysis`, `ux-hifi` | `work-plan` |
-| 7 | `tracker` ᴼ | story-writer | auto | `work-plan`, `acceptance-criteria`, `requirements-spec`, `architecture-spec`, `impact-analysis` | `story-map` |
+| 7 | `tracker` ᴼ | jira-tracker | auto | `work-plan`, `acceptance-criteria`, `requirements-spec`, `architecture-spec`, `impact-analysis` | `story-map` |
 | 8 | `implementation_ui` | implementer¹ | auto | `work-plan`, `architecture-spec`, `acceptance-criteria`, `ux-hifi`, `design-tokens` | `change-set-ui` |
 | 9 | `implementation_backend` | implementer¹ | auto | `work-plan`, `architecture-spec`, `acceptance-criteria`, `change-set-ui` | `change-set` |
 | 10 | `security` ᴼ | security | auto³ | `change-set`, `change-set-ui`, `architecture-spec`, `dependency-map`, `security-baseline` | `cve-report` |
@@ -29,9 +29,19 @@ Shared reference for every agent. You own one box; this shows you the rest so yo
 | 15 | `pull_request` | orchestrator | auto | `release-notes`, `change-set`, `change-set-ui`, `review-report`, `test-report`, `docs-update` | `pull-request` |
 
 ᴼ **Off unless the run asks for it.** Stages 7 and 10 are skipped by default. They
-turn on when the intent says so — "and create the stories", "and run a security
+turn on when the intent says so — "and update jira", "and run a security
 scan" — or via `--with tracker,security`. Both do something outward-facing, so
-running them unasked would be a surprise.
+running them unasked would be a surprise. The one exception is stage 7 on a run
+that carries a Jira key: it comes on by itself, and `hermit start` says so.
+
+**The Jira status sync is not a stage.** After each step the engine may owe the
+ticket a status change. `hermit_next_task` then returns `tracker_sync` instead of
+a stage brief, and the orchestrator hands it to the **jira-tracker** agent, which
+reads the ticket's real status, makes the moves in `pathsFrom` one at a time, and
+calls `hermit_ack_tracker_sync`. A move Jira refuses is acknowledged, not fatal.
+The ticket follows the run: To Do, Assessment (stage 7), In Progress (8–11),
+Testing (12–13), Code Review (14), UAT (the delivery gate open), Done. A ticket
+only leaves UAT once `test-report` says `pass` and delivery is approved.
 
 **Onboarding is not a stage.** `project-context`, `codebase-map` and `glossary` are mapped once for the repository by `hermit onboard`, stored in `.hermit/onboarding/`, and read by every run. Mapping a codebase is expensive and the answer barely changes between runs, so paying for it per run was a tax with no return. It is also opt-in — `hermit init` asks — so a run may legitimately have none of them: say which inputs are missing and work from the repository directly.
 
@@ -43,7 +53,7 @@ running them unasked would be a surprise.
 
 ¹ **A specialist may take either implementation stage.** `ui-developer` takes stage 8 for frontend and mobile projects; `backend-developer` takes stage 9 for Python, Go, JVM and Node projects. Same stage, same inputs and outputs, same gate. The pipeline picks from the stacks recorded when the run started; no match leaves `implementer` in place. `hermit status` names whoever actually ran it.
 
-² **Planning gates when stage 7 is on.** Creating an epic notifies a team, so the plan the epic comes from is approved first — the same reason the pull request follows delivery sign-off. With `tracker` off, planning is unattended.
+² **Planning gates when stage 7 is on.** Creating Tasks notifies a team, so the plan they come from is approved first — the same reason the pull request follows delivery sign-off. With `tracker` off, planning is unattended.
 
 ³ **Security gates on `**Major upgrades**`.** The count in `cve-report` decides: zero and the stage advances unattended, non-zero and a human accepts the break risk before the run continues. Patch and minor fixes are applied without asking; a fix that only exists in a major version never is.
 
@@ -67,7 +77,7 @@ tracker issue
         └─ acceptance-criteria  AC-n  ──────────────┐
              └─ architecture-spec  component        │
                   └─ work-plan  WP-n                │
-                       └─ story-map  tracker key    │   (when stage 7 runs)
+                       └─ story-map  Jira key       │   (when stage 7 runs)
                        └─ change-set(-ui)  files    │
                             └─ review-report  AC coverage table
                                  └─ test-report  AC verification ←┘
@@ -82,7 +92,7 @@ If you cannot trace your output back to an AC, you are building something nobody
 
 Seven always: requirements, architecture, all three UX fidelities, review, delivery. They cluster before expensive commitment — design before build, and build before release.
 
-Two more open conditionally, and only when the condition holds: **planning**, when the run will create tracker items from the plan; **security**, when a vulnerability fix requires a major version bump. Both exist so the interruption lands only on the runs that need it.
+Two more open conditionally, and only when the condition holds: **planning**, when the run will create Jira items from the plan; **security**, when a vulnerability fix requires a major version bump. Both exist so the interruption lands only on the runs that need it.
 
 A gate has three outcomes: **approve** (stage closes), **changes_requested** (the same agent runs again with the reviewer's comment attached), **reject** (run blocks; a human decides what happens).
 
